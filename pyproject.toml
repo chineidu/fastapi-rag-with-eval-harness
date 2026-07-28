@@ -4,4 +4,21 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "fastapi[standard]>=0.140.13",
+    "omegaconf>=2.3.1",
+    "pydantic-settings>=2.14.2",
+    "python-json-logger>=4.1.0",
+]
+
+[tool.ruff]
+extend-exclude = ["docs/fastapi"]
+
+[tool.ty.src]
+exclude = ["docs/fastapi"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.0",
+    "ty>=0.0.64",
+]
