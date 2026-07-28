@@ -18,7 +18,7 @@ def main() -> None:
             print(f"Removed {entry}")
             removed += 1
 
-    print(f"Done. Removed {removed} director{'y' if removed == 1 else 'ies'}.")
+    print(f"Done. Removed {removed} directories.")
 
 
 if __name__ == "__main__":
