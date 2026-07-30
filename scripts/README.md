@@ -1,6 +1,8 @@
 # Scripts
 
-Both scripts share reusable helpers from the `src.utils` package:
+See [docs/typer-cli-guide.md](docs/typer-cli-guide.md) for Typer CLI conventions (`@app.callback()`, commands, invocation style).
+
+Scripts share reusable helpers from the `src.utils` package:
 
 | Helper | Module | Description |
 |---|---|---|
@@ -17,7 +19,7 @@ Fetch QA-style data for RAG evaluation from GitHub Discussions or Stack Overflow
 **GitHub — answered & resolved discussions**
 
 ```bash
-uv run python scripts/fetch_eval_data.py github [--url URL] [--num N] [--output PATH] [--category SLUG]
+uv run -m scripts.fetch_eval_data github [--url URL] [--num N] [--output PATH] [--category SLUG]
 ```
 
 | Option | Default | Description |
@@ -30,7 +32,7 @@ uv run python scripts/fetch_eval_data.py github [--url URL] [--num N] [--output 
 **Stack Overflow — answered questions by tag**
 
 ```bash
-uv run python scripts/fetch_eval_data.py stackoverflow [--url URL] [--num N] [--output PATH] [--tag TAG]
+uv run -m scripts.fetch_eval_data stackoverflow [--url URL] [--num N] [--output PATH] [--tag TAG]
 ```
 
 | Option | Default | Description |
@@ -52,7 +54,7 @@ uv run python scripts/fetch_eval_data.py stackoverflow [--url URL] [--num N] [--
 Combine fetched GitHub and Stack Overflow datasets into a unified eval JSONL.
 
 ```bash
-uv run python scripts/normalize_eval_data.py normalize [--github PATH] [--stackoverflow PATH] [--output PATH]
+uv run -m scripts.normalize_eval_data normalize [--github PATH] [--stackoverflow PATH] [--output PATH]
 ```
 
 | Option | Default | Description |
@@ -62,3 +64,31 @@ uv run python scripts/normalize_eval_data.py normalize [--github PATH] [--stacko
 | `--output` | `data/eval_dataset.jsonl` | Unified output path |
 
 Each record in the unified output has fields `id`, `source`, `title`, `url`, `body`, `answerText`, `createdAt`, `score`, `answerScore`, and `tags`.
+
+## 3. classify_eval_data.py
+
+Classify eval records from `data/eval_dataset.jsonl` into one of three retrieval-difficulty labels using an LLM via OpenRouter.
+
+```bash
+uv run -m scripts.classify_eval_data classify [--input-path PATH] [--output-path PATH]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--input-path` | `data/eval_dataset.jsonl` | Unified eval records to classify |
+| `--output-path` | `data/eval_dataset_labeled.jsonl` | Output path with predicted labels |
+
+Each output record adds a `label` field with one of the following values:
+
+| Label | Meaning |
+|---|---|
+| `DIRECT_LOOKUP` | Answerable from a single concrete fact in the docs |
+| `MULTI_HOP` | Requires combining multiple features or concepts |
+| `CONCEPTUAL` | About design, architecture, trade-offs, or best practices |
+
+### Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Yes | OpenRouter API key |
+| `OPENROUTER_BASE_URL` | Yes | OpenRouter base URL (e.g. `https://openrouter.ai/api/v1`) |

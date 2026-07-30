@@ -15,6 +15,14 @@ class ErrorCodeEnum(StrEnum):
     UNEXPECTED_ERROR = "unexpected_error"
 
 
+class ClassificationLabel(StrEnum):
+    """Classification labels for the eval dataset."""
+
+    DIRECT_LOOKUP = "DIRECT_LOOKUP"
+    MULTI_HOP = "MULTI_HOP"
+    CONCEPTUAL = "CONCEPTUAL"
+
+
 class RepoHandle(NamedTuple):
     """A pair of immutable strings representing the owner and name of a GitHub repository."""
 

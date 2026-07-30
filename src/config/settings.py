@@ -23,6 +23,9 @@ class BaseConfig(BaseSettings):
     GITHUB_READ_ACCESS: SecretStr = SecretStr("")
     STACK_EXCHANGE_READ_ACCESS: SecretStr = SecretStr("")
 
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_API_KEY: SecretStr = SecretStr("")
+
     @field_validator("PORT", mode="before")
     @classmethod
     def parse_port_fields(cls, v: str | int) -> int:

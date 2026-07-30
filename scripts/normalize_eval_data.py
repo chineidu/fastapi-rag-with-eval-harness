@@ -19,8 +19,9 @@ app = typer.Typer(
 
 
 @app.callback()
-def _main_callback() -> None:
-    """Normalize fetched data into a unified eval dataset."""
+def _main_callback(ctx: typer.Context) -> None:
+    """Log the invoked command before running it."""
+    logger.info("running normalize_eval_data command: %s", ctx.invoked_subcommand)
 
 
 def _github_to_unified(rec: DiscussionNodeSchema) -> UnifiedEvalRecordSchema:

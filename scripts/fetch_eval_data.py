@@ -476,6 +476,12 @@ async def afetch_stack_exchange_data(
 app = typer.Typer(help="Fetch evaluation data", add_completion=False)
 
 
+@app.callback()
+def _main_callback(ctx: typer.Context) -> None:
+    """Log the invoked command before running it."""
+    logger.info("running fetch_eval_data command: %s", ctx.invoked_subcommand)
+
+
 @app.command()
 def github(
     url: str = "https://github.com/fastapi/fastapi",

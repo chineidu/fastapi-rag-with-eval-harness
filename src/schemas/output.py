@@ -1,6 +1,7 @@
 from typing import Any
 
 from src.schemas.base import BaseSchema
+from src.schemas.types import ClassificationLabel
 
 
 class DiscussionNodeSchema(BaseSchema):
@@ -67,3 +68,4 @@ class UnifiedEvalRecordSchema(BaseSchema):
     score: int
     answer_score: int
     tags: list[str]
+    label: ClassificationLabel | None = None
