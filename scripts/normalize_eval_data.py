@@ -13,7 +13,9 @@ from src.utils import read_jsonl, strip_html, write_jsonl
 
 logger = create_logger(name=__name__)
 
-app = typer.Typer(help="Normalize fetched data into a unified eval dataset", add_completion=False)
+app = typer.Typer(
+    help="Normalize fetched data into a unified eval dataset", add_completion=False
+)
 
 
 @app.callback()
@@ -38,7 +40,9 @@ def _github_to_unified(rec: DiscussionNodeSchema) -> UnifiedEvalRecordSchema:
     )
 
 
-def _stackoverflow_to_unified(rec: StackOverflowQuestionSchema) -> UnifiedEvalRecordSchema:
+def _stackoverflow_to_unified(
+    rec: StackOverflowQuestionSchema,
+) -> UnifiedEvalRecordSchema:
     """Convert a Stack Overflow question to a unified eval record."""
     answer = rec.answer
     if answer is None:
@@ -54,7 +58,9 @@ def _stackoverflow_to_unified(rec: StackOverflowQuestionSchema) -> UnifiedEvalRe
         url=rec.link,
         body=rec.body_markdown or strip_html(rec.body),
         answer_text=answer_text,
-        created_at=datetime.fromtimestamp(rec.creation_date, tz=UTC).isoformat().replace("+00:00", "Z"),
+        created_at=datetime.fromtimestamp(rec.creation_date, tz=UTC)
+        .isoformat()
+        .replace("+00:00", "Z"),
         score=rec.score,
         answer_score=answer_score,
         tags=rec.tags,

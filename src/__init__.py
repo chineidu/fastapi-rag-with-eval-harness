@@ -136,7 +136,12 @@ def _setup_listener(
     log_file: str | Path | None,
 ) -> None:
     """Initialize the global QueueListener (idempotent)."""
-    global _LISTENER, _LOGGING_INITIALIZED, _STRUCTURED_ENABLED, _INIT_LEVEL, _INIT_LOG_FILE
+    global \
+        _LISTENER, \
+        _LOGGING_INITIALIZED, \
+        _STRUCTURED_ENABLED, \
+        _INIT_LEVEL, \
+        _INIT_LOG_FILE
 
     if _LOGGING_INITIALIZED:
         if level != _INIT_LEVEL:

@@ -124,4 +124,3 @@ def refresh_settings() -> ConfigType:
 
 
 app_settings: ConfigType = refresh_settings()
-

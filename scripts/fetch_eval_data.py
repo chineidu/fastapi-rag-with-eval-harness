@@ -42,7 +42,9 @@ def _parse_repo_url(url: str) -> RepoHandle:
     parts = path.split("/")
 
     if len(parts) < 2:
-        raise ValueError(f"Expected GitHub repo URL (e.g. https://github.com/owner/repo), got: {url}")
+        raise ValueError(
+            f"Expected GitHub repo URL (e.g. https://github.com/owner/repo), got: {url}"
+        )
     return RepoHandle(owner=parts[0], name=parts[1])
 
 
@@ -183,7 +185,9 @@ async def _run_query(
             continue
         # If the response is not OK, raise an error
         if response.status_code != 200:
-            raise RuntimeError(f"GitHub API returned HTTP {response.status_code}: {response.text}")
+            raise RuntimeError(
+                f"GitHub API returned HTTP {response.status_code}: {response.text}"
+            )
         # Parse the response JSON
         data = response.json()
         # Check for GraphQL errors
@@ -206,20 +210,23 @@ async def _resolve_category_id(
         client, query=CATEGORY_ID_QUERY, variables={"owner": owner, "name": repo}
     )
     # Extract the categories from the response
-    categories: list[dict[str, Any]] = data["data"]["repository"]["discussionCategories"]["nodes"]
+    categories: list[dict[str, Any]] = data["data"]["repository"][
+        "discussionCategories"
+    ]["nodes"]
     # Iterate over the categories to find the one with the matching slug
     for cat in categories:
         if cat["slug"] == slug:
             return cat["id"]
     # If the requested category slug is not found, inform the user
     available: list[str] = [c["slug"] for c in categories]
-    raise RuntimeError(f"Category '{slug}' not found in {owner}/{repo}. Available: {available}")
+    raise RuntimeError(
+        f"Category '{slug}' not found in {owner}/{repo}. Available: {available}"
+    )
 
 
 def _is_answered_and_resolved(node: DiscussionNodeSchema) -> bool:
     """Check if a discussion is answered and resolved."""
     return bool(node.is_answered) and node.state_reason == "RESOLVED"
-
 
 
 async def afetch_data_from_github(
@@ -333,12 +340,16 @@ async def _fetch_stack_exchange_page(
 
     # Handle HTTP errors
     if response.status_code != 200:
-        raise RuntimeError(f"Stack Exchange API returned HTTP {response.status_code}: {response.text}")
+        raise RuntimeError(
+            f"Stack Exchange API returned HTTP {response.status_code}: {response.text}"
+        )
 
     # Handle Stack Exchange API errors
     data = response.json()
     if "error_id" in data:
-        raise RuntimeError(f"Stack Exchange API error {data['error_id']}: {data.get('error_message', '')}")
+        raise RuntimeError(
+            f"Stack Exchange API error {data['error_id']}: {data.get('error_message', '')}"
+        )
 
     # Respect rate limiting backoff
     backoff = data.get("backoff", 0)

@@ -14,7 +14,9 @@ class CORS:
     allow_origins: list[str] = field(
         default_factory=list, metadata={"description": "Allowed origins for CORS."}
     )
-    allow_credentials: bool = field(metadata={"description": "Allow credentials for CORS."})
+    allow_credentials: bool = field(
+        metadata={"description": "Allow credentials for CORS."}
+    )
     allow_methods: list[str] = field(
         default_factory=list, metadata={"description": "Allowed methods for CORS."}
     )
@@ -40,16 +42,24 @@ class APIConfig:
     version: str = field(metadata={"description": "The version of the API."})
     status: str = field(metadata={"description": "The current status of the API."})
     prefix: str = field(metadata={"description": "The prefix for the API routes."})
-    middleware: Middleware = field(metadata={"description": "Middleware configuration."})
+    middleware: Middleware = field(
+        metadata={"description": "Middleware configuration."}
+    )
 
 
 @dataclass(slots=True, kw_only=True)
 class DatabaseConfig:
     """Database configuration class."""
 
-    pool_size: int = field(default=30, metadata={"description": "Number of connections to keep in pool"})
-    max_overflow: int = field(default=10, metadata={"description": "Number of extra connections allowed"})
-    pool_timeout: int = field(default=20, metadata={"description": "Seconds to wait for a connection"})
+    pool_size: int = field(
+        default=30, metadata={"description": "Number of connections to keep in pool"}
+    )
+    max_overflow: int = field(
+        default=10, metadata={"description": "Number of extra connections allowed"}
+    )
+    pool_timeout: int = field(
+        default=20, metadata={"description": "Seconds to wait for a connection"}
+    )
     pool_recycle: int = field(
         default=1800,
         metadata={"description": "Seconds after which to recycle connections"},
@@ -66,7 +76,9 @@ class AppConfig(BaseModel):
     """Application configuration with validation."""
 
     api_config: APIConfig = Field(description="Configuration settings for the API")
-    database_config: DatabaseConfig = Field(description="Configuration settings for the database")
+    database_config: DatabaseConfig = Field(
+        description="Configuration settings for the database"
+    )
 
 
 config_path: Path = ROOT / "src/config/config.yaml"

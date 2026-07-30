@@ -22,7 +22,9 @@ def read_jsonl[M: BaseModel](path: Path, schema: type[M]) -> list[M]:
                 data = msgspec.json.decode(line)
                 records.append(schema.model_validate(data))
             except (msgspec.DecodeError, ValueError) as e:
-                logger.warning("Skipping invalid record at %s:%d — %s", path, line_no, e)
+                logger.warning(
+                    "Skipping invalid record at %s:%d — %s", path, line_no, e
+                )
     return records
 
 
@@ -30,4 +32,6 @@ def write_jsonl(path: Path, records: Sequence[BaseModel]) -> None:
     """Write Pydantic records to a JSONL file, one per line."""
     with path.open("w", encoding="utf-8") as f:
         for record in records:
-            f.write(f"{json.dumps(record.model_dump(by_alias=True), ensure_ascii=False, default=str)}\n")
+            f.write(
+                f"{json.dumps(record.model_dump(by_alias=True), ensure_ascii=False, default=str)}\n"
+            )
