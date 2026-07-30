@@ -72,12 +72,152 @@ class DatabaseConfig:
     )
 
 
+@dataclass(slots=True, kw_only=True)
+class GitHubEvalConfig:
+    """GitHub data-fetching pipeline configuration."""
+
+    graphql_url: str = field(metadata={"description": "GitHub GraphQL API endpoint."})
+    page_size: int = field(
+        default=100, metadata={"description": "Number of discussions per request."}
+    )
+    max_retries: int = field(
+        default=3, metadata={"description": "Max retries on rate limit."}
+    )
+    retry_sleep_secs: float = field(
+        default=0.5, metadata={"description": "Sleep between pagination requests."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class StackExchangeEvalConfig:
+    """Stack Exchange data-fetching pipeline configuration."""
+
+    api_url: str = field(metadata={"description": "Stack Exchange API base URL."})
+    page_size: int = field(
+        default=100, metadata={"description": "Number of questions per request."}
+    )
+    retry_sleep_secs: float = field(
+        default=1.0, metadata={"description": "Sleep between pagination requests."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class ClassifierConfig:
+    """LLM configuration for eval dataset classification."""
+
+    model_id: str = field(metadata={"description": "OpenRouter model identifier."})
+    max_input_length: int = field(
+        default=2000, metadata={"description": "Max characters in classifier input."}
+    )
+    timeout_seconds: int = field(
+        default=120, metadata={"description": "API request timeout in seconds."}
+    )
+    max_retries: int = field(
+        default=3, metadata={"description": "Max retries for API requests."}
+    )
+    temperature: float = field(
+        default=0.0, metadata={"description": "LLM sampling temperature."}
+    )
+    seed: int = field(
+        default=47, metadata={"description": "LLM random seed for reproducibility."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class EvalDefaultsConfig:
+    """Default CLI argument values for eval pipeline scripts."""
+
+    github_url: str = field(metadata={"description": "Default GitHub repo URL."})
+    stackoverflow_url: str = field(
+        metadata={"description": "Default Stack Exchange site URL."}
+    )
+    num_issues: int = field(
+        default=30, metadata={"description": "Default number of items to fetch."}
+    )
+    github_category: str = field(
+        default="questions",
+        metadata={"description": "Default discussion category slug."},
+    )
+    stackoverflow_tag: str = field(
+        default="fastapi", metadata={"description": "Default Stack Exchange tag."}
+    )
+    github_discussions_path: str = field(
+        metadata={"description": "Default output path for GitHub discussions JSONL."}
+    )
+    stackoverflow_questions_path: str = field(
+        metadata={
+            "description": "Default output path for Stack Overflow questions JSONL."
+        }
+    )
+    eval_dataset_path: str = field(
+        metadata={"description": "Default path for unified eval dataset JSONL."}
+    )
+    eval_dataset_labeled_path: str = field(
+        metadata={"description": "Default path for labeled eval dataset JSONL."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class RAGLLMConfig:
+    """LLM configuration for the RAG/QA pipeline."""
+
+    model_id: str = field(metadata={"description": "OpenRouter model identifier."})
+    temperature: float = field(
+        default=0.1, metadata={"description": "LLM sampling temperature."}
+    )
+    max_tokens: int = field(
+        default=4096, metadata={"description": "Max tokens in generated response."}
+    )
+    timeout_seconds: int = field(
+        default=120, metadata={"description": "API request timeout in seconds."}
+    )
+    max_retries: int = field(
+        default=3, metadata={"description": "Max retries for API requests."}
+    )
+    seed: int = field(
+        default=47, metadata={"description": "LLM random seed for reproducibility."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class RAGConfig:
+    """RAG/QA pipeline configuration."""
+
+    llm: RAGLLMConfig = field(
+        metadata={"description": "LLM settings for RAG/QA generation."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class EvalPipelineConfig:
+    """Eval data pipeline configuration."""
+
+    github: GitHubEvalConfig = field(
+        metadata={"description": "GitHub fetching settings."}
+    )
+    stack_exchange: StackExchangeEvalConfig = field(
+        metadata={"description": "Stack Exchange fetching settings."}
+    )
+    classifier: ClassifierConfig = field(
+        metadata={"description": "LLM classification settings."}
+    )
+    defaults: EvalDefaultsConfig = field(
+        metadata={"description": "Default CLI argument values."}
+    )
+
+
 class AppConfig(BaseModel):
     """Application configuration with validation."""
 
     api_config: APIConfig = Field(description="Configuration settings for the API")
     database_config: DatabaseConfig = Field(
         description="Configuration settings for the database"
+    )
+    eval_pipeline_config: EvalPipelineConfig = Field(
+        description="Configuration settings for the eval data pipeline"
+    )
+    rag_config: RAGConfig = Field(
+        description="Configuration settings for the RAG/QA pipeline"
     )
 
 

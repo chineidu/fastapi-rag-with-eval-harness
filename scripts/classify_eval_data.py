@@ -18,7 +18,7 @@ import typer
 from pydantic import BaseModel, Field
 
 from src import create_logger
-from src.config import app_settings
+from src.config import app_config, app_settings
 from src.schemas.output import UnifiedEvalRecordSchema
 from src.schemas.types import ClassificationLabel
 from src.utils import read_jsonl, write_jsonl
@@ -31,19 +31,12 @@ app = typer.Typer(
 )
 
 
-MODEL_ID: str = "deepseek/deepseek-v4-flash"  # via openrouter
-MAX_INPUT_LENGTH: int = 2000
-TIMEOUT_SECONDS: int = 120
-MAX_RETRIES: int = 3
-TEMPERATURE: float = 0.0
-SEED: int = 47
-
 # 1. Create an OpenAI client targeting OpenRouter
 openai_aclient = openai.AsyncOpenAI(
     base_url=app_settings.OPENROUTER_BASE_URL,
     api_key=app_settings.OPENROUTER_API_KEY.get_secret_value(),
-    timeout=TIMEOUT_SECONDS,
-    max_retries=MAX_RETRIES,
+    timeout=app_config.eval_pipeline_config.classifier.timeout_seconds,
+    max_retries=app_config.eval_pipeline_config.classifier.max_retries,
 )
 # 2. Patch it with Instructor
 aclient = instructor.from_openai(openai_aclient)
@@ -126,8 +119,9 @@ class ClassificationResponse(BaseModel):
 def _build_text(record: UnifiedEvalRecordSchema) -> str:
     """Build the classifier input from a record, truncating to MAX_INPUT_LENGTH."""
     text = f"Title: {record.title}\n\nBody:\n{record.body}"
-    if len(text) > MAX_INPUT_LENGTH:
-        text = text[:MAX_INPUT_LENGTH]
+    max_len = app_config.eval_pipeline_config.classifier.max_input_length
+    if len(text) > max_len:
+        text = text[:max_len]
     return text
 
 
@@ -135,10 +129,10 @@ async def _aclassify_single(record: UnifiedEvalRecordSchema) -> ClassificationRe
     """Perform single-label classification on a unified eval record."""
     text = _build_text(record)
     return await aclient.completions.create(
-        model=MODEL_ID,
+        model=app_config.eval_pipeline_config.classifier.model_id,
         response_model=ClassificationResponse,
-        temperature=TEMPERATURE,
-        seed=SEED,
+        temperature=app_config.eval_pipeline_config.classifier.temperature,
+        seed=app_config.eval_pipeline_config.classifier.seed,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {
@@ -176,8 +170,8 @@ def _main_callback(ctx: typer.Context) -> None:
 
 @app.command()
 def classify(
-    input_path: str = "data/eval_dataset.jsonl",
-    output_path: str = "data/eval_dataset_labeled.jsonl",
+    input_path: str = app_config.eval_pipeline_config.defaults.eval_dataset_path,
+    output_path: str = app_config.eval_pipeline_config.defaults.eval_dataset_labeled_path,
 ) -> None:
     """Classify eval records and write the labeled result."""
     in_path = Path(input_path)

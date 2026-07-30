@@ -8,7 +8,7 @@ import httpx
 import typer
 
 from src import create_logger
-from src.config import app_settings
+from src.config import app_config, app_settings
 from src.schemas.output import (
     DiscussionNodeSchema,
     StackOverflowAnswerSchema,
@@ -19,16 +19,7 @@ from src.utils import write_jsonl
 
 logger = create_logger(name=__name__)
 
-GITHUB_GRAPHQL_URL: str = "https://api.github.com/graphql"
-PAGE_SIZE: int = 100
-MAX_RETRIES: int = 3
-RETRY_SLEEP_SECS: float = 0.5
-
 type OutputRecord = DiscussionNodeSchema | StackOverflowQuestionSchema
-
-STACK_EXCHANGE_API_URL: str = "https://api.stackexchange.com/2.3"
-STACK_EXCHANGE_PAGE_SIZE: int = 100
-STACK_EXCHANGE_RETRY_SLEEP_SECS: float = 1.0
 
 
 def _parse_repo_url(url: str) -> RepoHandle:
@@ -165,10 +156,10 @@ async def _run_query(
 ) -> dict[str, Any]:
     """Execute a GraphQL query against the GitHub API with retry on rate limit."""
     headers = _get_github_auth_headers()
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(app_config.eval_pipeline_config.github.max_retries):
         # Make a POST request to GitHub GraphQL API
         response = await client.post(
-            GITHUB_GRAPHQL_URL,
+            app_config.eval_pipeline_config.github.graphql_url,
             headers=headers,
             json={"query": query, "variables": variables},
         )
@@ -178,7 +169,7 @@ async def _run_query(
             logger.warning(
                 "Rate limited (attempt %d/%d), waiting %ds",
                 attempt + 1,
-                MAX_RETRIES,
+                app_config.eval_pipeline_config.github.max_retries,
                 retry_after,
             )
             await asyncio.sleep(retry_after)
@@ -269,7 +260,7 @@ async def afetch_data_from_github(
                     "name": repo,
                     "cursor": cursor,
                     "category_id": category_id,
-                    "first": PAGE_SIZE,
+                    "first": app_config.eval_pipeline_config.github.page_size,
                 },
             )
             page = data["data"]["repository"]["discussions"]
@@ -294,7 +285,7 @@ async def afetch_data_from_github(
                 break
 
             cursor = page_info["endCursor"]
-            await asyncio.sleep(RETRY_SLEEP_SECS)
+            await asyncio.sleep(app_config.eval_pipeline_config.github.retry_sleep_secs)
 
     # Ensure ONLY the required number of discussions are selected
     matched = matched[:num_issues]
@@ -383,7 +374,7 @@ async def afetch_stack_exchange_data(
         while len(matched) < num_issues:
             base_params: dict[str, Any] = {
                 "site": site,
-                "pagesize": STACK_EXCHANGE_PAGE_SIZE,
+                "pagesize": app_config.eval_pipeline_config.stack_exchange.page_size,
                 "sort": "votes",
                 "order": "desc",
                 "filter": "withbody",
@@ -395,7 +386,7 @@ async def afetch_stack_exchange_data(
 
             data = await _fetch_stack_exchange_page(
                 client,
-                f"{STACK_EXCHANGE_API_URL}/questions",
+                f"{app_config.eval_pipeline_config.stack_exchange.api_url}/questions",
                 questions_params,
             )
             items: list[dict[str, Any]] = data.get("items", [])
@@ -410,7 +401,7 @@ async def afetch_stack_exchange_data(
             # e.g. .../questions/12345;67890;11121/answers
             answers_data = await _fetch_stack_exchange_page(
                 client,
-                f"{STACK_EXCHANGE_API_URL}/questions/{';'.join(map(str, question_ids))}/answers",
+                f"{app_config.eval_pipeline_config.stack_exchange.api_url}/questions/{';'.join(map(str, question_ids))}/answers",
                 answers_params,
             )
 
@@ -456,7 +447,9 @@ async def afetch_stack_exchange_data(
                 logger.info("No more pages available")
                 break
 
-            await asyncio.sleep(STACK_EXCHANGE_RETRY_SLEEP_SECS)
+            await asyncio.sleep(
+                app_config.eval_pipeline_config.stack_exchange.retry_sleep_secs
+            )
             page += 1
 
     # Truncate to the number of issues requested
@@ -484,10 +477,10 @@ def _main_callback(ctx: typer.Context) -> None:
 
 @app.command()
 def github(
-    url: str = "https://github.com/fastapi/fastapi",
-    num: int = 30,
-    output: str = "data/fastapi_discussions.jsonl",
-    category: str = "questions",
+    url: str = app_config.eval_pipeline_config.defaults.github_url,
+    num: int = app_config.eval_pipeline_config.defaults.num_issues,
+    output: str = app_config.eval_pipeline_config.defaults.github_discussions_path,
+    category: str = app_config.eval_pipeline_config.defaults.github_category,
 ) -> None:
     """Fetch answered and resolved discussions from a GitHub repo."""
     asyncio.run(afetch_data_from_github(url, num, output, category))
@@ -495,10 +488,10 @@ def github(
 
 @app.command()
 def stackoverflow(
-    url: str = "https://stackoverflow.com",
-    num: int = 30,
-    output: str = "data/fastapi_stackoverflow.jsonl",
-    tag: str = "fastapi",
+    url: str = app_config.eval_pipeline_config.defaults.stackoverflow_url,
+    num: int = app_config.eval_pipeline_config.defaults.num_issues,
+    output: str = app_config.eval_pipeline_config.defaults.stackoverflow_questions_path,
+    tag: str = app_config.eval_pipeline_config.defaults.stackoverflow_tag,
 ) -> None:
     """Fetch answered questions from Stack Overflow by tag."""
     asyncio.run(afetch_stack_exchange_data(url, num, output, tag))

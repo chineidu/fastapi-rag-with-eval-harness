@@ -4,6 +4,7 @@ from pathlib import Path
 import typer
 
 from src import create_logger
+from src.config import app_config
 from src.schemas.output import (
     DiscussionNodeSchema,
     StackOverflowQuestionSchema,
@@ -70,9 +71,9 @@ def _stackoverflow_to_unified(
 
 @app.command()
 def normalize(
-    github: str = "data/fastapi_discussions.jsonl",
-    stackoverflow: str = "data/fastapi_stackoverflow.jsonl",
-    output: str = "data/eval_dataset.jsonl",
+    github: str = app_config.eval_pipeline_config.defaults.github_discussions_path,
+    stackoverflow: str = app_config.eval_pipeline_config.defaults.stackoverflow_questions_path,
+    output: str = app_config.eval_pipeline_config.defaults.eval_dataset_path,
 ) -> None:
     """Combine GitHub and Stack Overflow datasets into a unified eval JSONL."""
     unified: list[UnifiedEvalRecordSchema] = []

@@ -21,3 +21,40 @@ config:
     pool_pre_ping: true # Test connections before use
     echo: false
     expire_on_commit: false # False for async implementations
+
+  eval_pipeline_config:
+    github:
+      graphql_url: "https://api.github.com/graphql"
+      page_size: 100
+      max_retries: 3
+      retry_sleep_secs: 0.5
+    stack_exchange:
+      api_url: "https://api.stackexchange.com/2.3"
+      page_size: 100
+      retry_sleep_secs: 1.0
+    classifier:
+      model_id: "deepseek/deepseek-v4-flash"
+      max_input_length: 2000
+      timeout_seconds: 120
+      max_retries: 3
+      temperature: 0.0
+      seed: 47
+    defaults:
+      github_url: "https://github.com/fastapi/fastapi"
+      stackoverflow_url: "https://stackoverflow.com"
+      num_issues: 30
+      github_category: "questions"
+      stackoverflow_tag: "fastapi"
+      github_discussions_path: "data/fastapi_discussions.jsonl"
+      stackoverflow_questions_path: "data/fastapi_stackoverflow.jsonl"
+      eval_dataset_path: "data/eval_dataset.jsonl"
+      eval_dataset_labeled_path: "data/eval_dataset_labeled.jsonl"
+
+  rag_config:
+    llm:
+      model_id: "deepseek/deepseek-v4-flash"
+      temperature: 0.1
+      max_tokens: 4096
+      timeout_seconds: 120
+      max_retries: 3
+      seed: 47

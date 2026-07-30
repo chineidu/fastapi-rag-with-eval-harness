@@ -4,8 +4,9 @@ help:
 	@echo "Available commands:"
 	@echo ""
 	@echo "  make install      - Install all dependencies"
-	@echo "  make test         - Run tests with coverage"
-	@echo "  make test-cov     - Run tests with coverage (verbose)"
+	@echo "  make test         - Run tests (concise output)"
+	@echo "  make test-verbose - Run tests with verbose output and coverage"
+	@echo "  make test-cov     - Run tests with coverage"
 	@echo "  make lint         - Run linter (ruff)"
 	@echo "  make format       - Format code (ruff)"
 	@echo "  make typecheck    - Run type checker (ty)"
@@ -20,7 +21,12 @@ install:
 .PHONY: test
 test:
 	@echo "Running tests..."
-	uv run pytest
+	uv run pytest -q
+
+.PHONY: test-verbose
+test-verbose:
+	@echo "Running tests (verbose with coverage)..."
+	uv run pytest -vv --cov=src --cov-report=term-missing
 
 .PHONY: test-cov
 test-cov:
