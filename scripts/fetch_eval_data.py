@@ -1,15 +1,21 @@
 import asyncio
-import json
 import urllib.parse
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import httpx
+import typer
 
 from src import create_logger
 from src.config import app_settings
-from src.schemas.output import GitHubAPIResponseSchema
+from src.schemas.output import (
+    DiscussionNodeSchema,
+    StackOverflowAnswerSchema,
+    StackOverflowQuestionSchema,
+)
 from src.schemas.types import RepoHandle
+from src.utils import write_jsonl
 
 logger = create_logger(name=__name__)
 
@@ -17,6 +23,12 @@ GITHUB_GRAPHQL_URL: str = "https://api.github.com/graphql"
 PAGE_SIZE: int = 100
 MAX_RETRIES: int = 3
 RETRY_SLEEP_SECS: float = 0.5
+
+type OutputRecord = DiscussionNodeSchema | StackOverflowQuestionSchema
+
+STACK_EXCHANGE_API_URL: str = "https://api.stackexchange.com/2.3"
+STACK_EXCHANGE_PAGE_SIZE: int = 100
+STACK_EXCHANGE_RETRY_SLEEP_SECS: float = 1.0
 
 
 def _parse_repo_url(url: str) -> RepoHandle:
@@ -30,9 +42,7 @@ def _parse_repo_url(url: str) -> RepoHandle:
     parts = path.split("/")
 
     if len(parts) < 2:
-        raise ValueError(
-            f"Expected GitHub repo URL (e.g. https://github.com/owner/repo), got: {url}"
-        )
+        raise ValueError(f"Expected GitHub repo URL (e.g. https://github.com/owner/repo), got: {url}")
     return RepoHandle(owner=parts[0], name=parts[1])
 
 
@@ -135,7 +145,7 @@ query($owner: String!, $name: String!, $cursor: String, $category_id: ID!, $firs
 
 
 def _get_github_auth_headers() -> dict[str, str]:
-    # token = os.environ.get("GITHUB_TOKEN")
+    """Build auth headers for GitHub GraphQL API."""
     token = app_settings.GITHUB_READ_ACCESS.get_secret_value()
     if not token:
         raise RuntimeError("GITHUB_READ_ACCESS environment variable is not set")
@@ -151,13 +161,16 @@ async def _run_query(
     query: str,
     variables: dict[str, Any],
 ) -> dict[str, Any]:
+    """Execute a GraphQL query against the GitHub API with retry on rate limit."""
     headers = _get_github_auth_headers()
     for attempt in range(MAX_RETRIES):
+        # Make a POST request to GitHub GraphQL API
         response = await client.post(
             GITHUB_GRAPHQL_URL,
             headers=headers,
             json={"query": query, "variables": variables},
         )
+        # Handle rate limiting by retrying with exponential backoff
         if response.status_code == 429:
             retry_after = int(response.headers.get("retry-after", 10))
             logger.warning(
@@ -168,14 +181,16 @@ async def _run_query(
             )
             await asyncio.sleep(retry_after)
             continue
+        # If the response is not OK, raise an error
         if response.status_code != 200:
-            raise RuntimeError(
-                f"GitHub API returned HTTP {response.status_code}: {response.text}"
-            )
+            raise RuntimeError(f"GitHub API returned HTTP {response.status_code}: {response.text}")
+        # Parse the response JSON
         data = response.json()
+        # Check for GraphQL errors
         if "errors" in data:
             raise RuntimeError(f"GraphQL errors: {data['errors']}")
         return data
+    # If max retries are exceeded, raise an error
     raise RuntimeError("Max retries exceeded for GitHub API rate limiting")
 
 
@@ -186,33 +201,25 @@ async def _resolve_category_id(
     slug: str,
 ) -> str:
     """Resolve discussion category ID from slug."""
-    data = await _run_query(
+    # Fetch the available discussion categories
+    data: dict[str, Any] = await _run_query(
         client, query=CATEGORY_ID_QUERY, variables={"owner": owner, "name": repo}
     )
-    categories = data["data"]["repository"]["discussionCategories"]["nodes"]
+    # Extract the categories from the response
+    categories: list[dict[str, Any]] = data["data"]["repository"]["discussionCategories"]["nodes"]
+    # Iterate over the categories to find the one with the matching slug
     for cat in categories:
         if cat["slug"] == slug:
             return cat["id"]
-
     # If the requested category slug is not found, inform the user
-    available = [c["slug"] for c in categories]
-    raise RuntimeError(
-        f"Category '{slug}' not found in {owner}/{repo}. Available: {available}"
-    )
+    available: list[str] = [c["slug"] for c in categories]
+    raise RuntimeError(f"Category '{slug}' not found in {owner}/{repo}. Available: {available}")
 
 
-def _is_answered_and_resolved(node: GitHubAPIResponseSchema) -> bool:
+def _is_answered_and_resolved(node: DiscussionNodeSchema) -> bool:
     """Check if a discussion is answered and resolved."""
     return bool(node.is_answered) and node.state_reason == "RESOLVED"
 
-
-def _write_jsonl(path: Path, records: list[GitHubAPIResponseSchema]) -> None:
-    """Write records to a JSONL file."""
-    with path.open("w", encoding="utf-8") as f:
-        for record in records:
-            f.write(
-                f"{json.dumps(record.model_dump(by_alias=True), ensure_ascii=False, default=str)}\n"
-            )
 
 
 async def afetch_data_from_github(
@@ -237,14 +244,17 @@ async def afetch_data_from_github(
     )
 
     async with httpx.AsyncClient(timeout=30) as client:
+        # Resolve the category ID for the given category slug
         category_id = await _resolve_category_id(client, owner, repo, category_slug)
         logger.info("Resolved category ID for '%s'", category_slug)
 
-        matched: list[GitHubAPIResponseSchema] = []
+        matched: list[DiscussionNodeSchema] = []
         cursor: str | None = None
 
+        # Start Fetching discussions using pagination: Fetch only the required number of discussions
         while len(matched) < num_issues:
-            data = await _run_query(
+            # Fetch discussions for the current category
+            data: dict[str, Any] = await _run_query(
                 client,
                 query=DISCUSSIONS_QUERY,
                 variables={
@@ -256,7 +266,10 @@ async def afetch_data_from_github(
                 },
             )
             page = data["data"]["repository"]["discussions"]
-            parsed = (GitHubAPIResponseSchema.model_validate(n) for n in page["nodes"])
+            parsed: list[DiscussionNodeSchema] = [
+                DiscussionNodeSchema.model_validate(n) for n in page["nodes"]
+            ]
+            # Select ONLY the nodes that meet the condition
             matched.extend(n for n in parsed if _is_answered_and_resolved(n))
 
             logger.info(
@@ -276,17 +289,207 @@ async def afetch_data_from_github(
             cursor = page_info["endCursor"]
             await asyncio.sleep(RETRY_SLEEP_SECS)
 
+    # Ensure ONLY the required number of discussions are selected
     matched = matched[:num_issues]
+    # Sort discussions by upvote_count
     matched.sort(key=lambda n: n.upvote_count, reverse=True)
 
     output = Path(output_path)
+    # Create the output directory if it does not exist
     output.parent.mkdir(parents=True, exist_ok=True)
-    await asyncio.to_thread(_write_jsonl, output, matched)
+
+    # Write the matched discussions to a JSONL file
+    await asyncio.to_thread(write_jsonl, output, matched)
     logger.info("Wrote %d discussions to %s", len(matched), output)
 
 
+def _parse_stack_exchange_url(url: str) -> str:
+    """Extract site name from a Stack Exchange URL (e.g. ``stackoverflow.com`` → ``stackoverflow``)."""
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.hostname:
+        # Return the stripped URL if hostname is not detected
+        return url.rstrip("/")
+    hostname = parsed.hostname.lower()
+    return hostname.split(".")[0]
+
+
+def _pick_best_answer(answers: list[dict[str, Any]]) -> StackOverflowAnswerSchema:
+    """Return accepted answer, or highest-scored answer if none is accepted."""
+    target = next((a for a in answers if a.get("is_accepted")), None) or max(
+        answers, key=lambda a: a.get("score", 0)
+    )
+    if "link" not in target:
+        target["link"] = f"https://stackoverflow.com/a/{target['answer_id']}"
+    return StackOverflowAnswerSchema.model_validate(target)
+
+
+async def _fetch_stack_exchange_page(
+    client: httpx.AsyncClient,
+    endpoint: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """Fetch a single page from the Stack Exchange API, respecting backoff."""
+    response = await client.get(endpoint, params=params)
+
+    # Handle HTTP errors
+    if response.status_code != 200:
+        raise RuntimeError(f"Stack Exchange API returned HTTP {response.status_code}: {response.text}")
+
+    # Handle Stack Exchange API errors
+    data = response.json()
+    if "error_id" in data:
+        raise RuntimeError(f"Stack Exchange API error {data['error_id']}: {data.get('error_message', '')}")
+
+    # Respect rate limiting backoff
+    backoff = data.get("backoff", 0)
+    if backoff:
+        await asyncio.sleep(backoff)
+
+    return data
+
+
+async def afetch_stack_exchange_data(
+    url: str,
+    num_issues: int,
+    output_path: str,
+    tag: str = "fastapi",
+) -> None:
+    """Fetch answered questions from Stack Exchange by tag and write to JSONL."""
+    site = _parse_stack_exchange_url(url)
+    logger.info(
+        "Fetching %d answered questions from %s (tag=%s)",
+        num_issues,
+        site,
+        tag,
+    )
+
+    api_key = app_settings.STACK_EXCHANGE_READ_ACCESS.get_secret_value()
+
+    matched: list[OutputRecord] = []
+    page = 1
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        while len(matched) < num_issues:
+            base_params: dict[str, Any] = {
+                "site": site,
+                "pagesize": STACK_EXCHANGE_PAGE_SIZE,
+                "sort": "votes",
+                "order": "desc",
+                "filter": "withbody",
+            }
+            if api_key:
+                base_params["key"] = api_key
+
+            questions_params = {**base_params, "tagged": tag, "page": page}
+
+            data = await _fetch_stack_exchange_page(
+                client,
+                f"{STACK_EXCHANGE_API_URL}/questions",
+                questions_params,
+            )
+            items: list[dict[str, Any]] = data.get("items", [])
+            if not items:
+                logger.info("No more questions available")
+                break
+
+            question_ids: list[int] = [q["question_id"] for q in items]
+            answers_params = {**base_params}
+
+            # Batch up to 100 question IDs via semicolons (avoids N+1).
+            # e.g. .../questions/12345;67890;11121/answers
+            answers_data = await _fetch_stack_exchange_page(
+                client,
+                f"{STACK_EXCHANGE_API_URL}/questions/{';'.join(map(str, question_ids))}/answers",
+                answers_params,
+            )
+
+            # Build a map from question ID -> list of its answers
+            answers_map: dict[int, list[dict[str, Any]]] = defaultdict(list)
+            for a in answers_data.get("items", []):
+                answers_map[a["question_id"]].append(a)
+
+            for item in items:
+                if not item.get("is_answered"):
+                    continue
+                qid = item["question_id"]
+                answers = answers_map.get(qid, [])
+                # Skip questions that don't have an answer
+                if not answers:
+                    continue
+
+                question = StackOverflowQuestionSchema(
+                    question_id=qid,
+                    title=item["title"],
+                    link=item["link"],
+                    body=item.get("body", ""),
+                    body_markdown=item.get("body_markdown", ""),
+                    score=item.get("score", 0),
+                    answer_count=item.get("answer_count", 0),
+                    view_count=item.get("view_count", 0),
+                    creation_date=item.get("creation_date", 0),
+                    tags=item.get("tags", []),
+                    is_answered=True,
+                    answer=_pick_best_answer(answers),
+                )
+                matched.append(question)
+                if len(matched) >= num_issues:
+                    break
+
+            logger.info(
+                "Collected %d/%d answered questions",
+                len(matched),
+                num_issues,
+            )
+
+            if not data.get("has_more"):
+                logger.info("No more pages available")
+                break
+
+            await asyncio.sleep(STACK_EXCHANGE_RETRY_SLEEP_SECS)
+            page += 1
+
+    # Truncate to the number of issues requested
+    matched = matched[:num_issues]
+    output = Path(output_path)
+    # Create the output directory if it does not exist
+    output.parent.mkdir(parents=True, exist_ok=True)
+    # Write the matched discussions to a JSONL file
+    await asyncio.to_thread(write_jsonl, output, matched)
+    logger.info("Wrote %d questions to %s", len(matched), output)
+
+
+# ===================================
+# CLI app
+# ===================================
+
+app = typer.Typer(help="Fetch evaluation data", add_completion=False)
+
+
+@app.command()
+def github(
+    url: str = "https://github.com/fastapi/fastapi",
+    num: int = 30,
+    output: str = "data/fastapi_discussions.jsonl",
+    category: str = "questions",
+) -> None:
+    """Fetch answered and resolved discussions from a GitHub repo."""
+    asyncio.run(afetch_data_from_github(url, num, output, category))
+
+
+@app.command()
+def stackoverflow(
+    url: str = "https://stackoverflow.com",
+    num: int = 30,
+    output: str = "data/fastapi_stackoverflow.jsonl",
+    tag: str = "fastapi",
+) -> None:
+    """Fetch answered questions from Stack Overflow by tag."""
+    asyncio.run(afetch_stack_exchange_data(url, num, output, tag))
+
+
+def _main() -> None:
+    app()
+
+
 if __name__ == "__main__":
-    url: str = "https://github.com/fastapi/fastapi"
-    num_issues: int = 5
-    output_path: str = "data/fastapi_discussions.jsonl"
-    asyncio.run(afetch_data_from_github(url, num_issues, output_path))
+    _main()
