@@ -5,22 +5,39 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "fastapi[standard]>=0.140.13",
-    "instructor>=1.15.4",
-    "msgspec>=0.21.1",
-    "omegaconf>=2.3.1",
-    "pydantic-settings>=2.14.2",
-    "python-json-logger>=4.1.0",
+  "fastapi[standard]>=0.140.13",
+  "instructor>=1.15.4",
+  "msgspec>=0.21.1",
+  "omegaconf>=2.3.1",
+  "pydantic-settings>=2.14.2",
+  "python-json-logger>=4.1.0",
 ]
+
+[dependency-groups]
+dev = [
+  "prek>=0.4.11",
+  "pytest>=9.1.1",
+  "pytest-asyncio>=1.4.0",
+  "pytest-cov>=7.1.0",
+  "ruff>=0.16.0",
+  "ty>=0.0.64",
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --cov=src --cov-report=term-missing --cov-fail-under=80"
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 extend-exclude = ["docs/fastapi"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/__init__.py" = ["RUF012"]
+"tests/**/*.py" = ["D100", "D101", "D102", "D103", "D104"]
+
 [tool.ty.src]
 exclude = ["docs/fastapi"]
-
-[dependency-groups]
-dev = [
-    "ruff>=0.16.0",
-    "ty>=0.0.64",
-]
