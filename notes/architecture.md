@@ -32,12 +32,12 @@ Binary relevance: each document is either relevant or not (0 or 1), no intermedi
 
 ### 3.1 Corpus
 
-~864 FastAPI documentation files from the FastAPI repo source tree:
+615 FastAPI documentation files from the FastAPI repo source tree (v0.140.0 snapshot, upstream commit `255b912`, 2026-07-24; verified 2026-08-02):
 
 | Source | Count | Description |
 |---|---|---|
 | `docs/fastapi/docs_src/*.py` | 461 | Python example code snippets |
-| `docs/fastapi/docs/en/docs/*.md` | 403 | Markdown documentation pages |
+| `docs/fastapi/docs/en/docs/*.md` | 154 | Markdown documentation pages (EN only; 12 translation trees excluded by design) |
 
 ### 3.2 Evaluation Queries
 
@@ -86,7 +86,7 @@ Format: JSON array, one object per query.
 
 **Labeling assumption:** Sparse binary relevance. Any doc not listed in `relevant_docs` is treated as irrelevant. This is the standard IR pooling assumption.
 
-**Why sparse?** Complete labeling (70 queries × 864 docs = 60,480 judgments) is infeasible for a solo engineer.
+**Why sparse?** Complete labeling (70 queries × 615 docs = 43,050 judgments) is infeasible for a solo engineer.
 Semantic search narrows each query to ~30 candidates, then the LLM judges those 30 (70 × 30 = 2,100 judgments total).
 Of those, most queries have 1–3 relevant docs (DIRECT_LOOKUP typically 1, MULTI_HOP and CONCEPTUAL 2–5), producing ~140–210 total relevant labels.
 The pooling assumption (standard in TREC, BEIR) says: docs that never surfaced in the top-30 semantic search are assumed irrelevant.
@@ -98,7 +98,7 @@ This biases recall@k slightly upward (you miss some relevant docs), but the *rel
 
 ### 3.4 Labeling Pipeline
 
-All 70 queries need labeling against the ~864 doc corpus. Workflow:
+All 70 queries need labeling against the 615-doc corpus. Workflow:
 
 ```
 For each query:
@@ -136,8 +136,9 @@ Harness (copyable module)  ──► Adapter (project-specific)
 ```python
 @dataclass
 class RetrievalResult:
-    documents: list[tuple[str, float]]   # [(doc_path, score), ...]
-    metadata: dict[str, object]           # chunking info, model name, config hash, etc.
+    documents: list[tuple[str, float]]  # [(doc_path, score), ...]
+    metadata: dict[str, object]  # chunking info, model name, config hash, etc.
+
 
 class RetrieverAdapter(Protocol):
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult: ...
