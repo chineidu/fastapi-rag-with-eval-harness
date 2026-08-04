@@ -25,7 +25,18 @@ def strip_html(text: str) -> str:
 
 
 def _normalize_line_endings(text: str) -> str:
-    """Convert CRLF/CR line endings to LF."""
+    """Convert CRLF/CR line endings to LF.
+
+    Examples
+    --------
+    Mixed CRLF (``\\r\\n``) and CR (``\\r``) endings become LF (``\\n``):
+
+    >>> text = "line 1\\r\\nline 2\\rline 3\\n"
+    >>> text  # before
+    'line 1\\r\\nline 2\\rline 3\\n'
+    >>> _normalize_line_endings(text)  # after
+    'line 1\\nline 2\\nline 3\\n'
+    """
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
