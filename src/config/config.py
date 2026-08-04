@@ -158,6 +158,32 @@ class EvalDefaultsConfig:
 
 
 @dataclass(slots=True, kw_only=True)
+class EmbeddingsConfig:
+    """Shared text-embedding configuration for the labeling pipeline and RAG retriever."""
+
+    provider: str = field(
+        default="local",
+        metadata={"description": "Active embeddings provider: 'local' or 'api'."},
+    )
+    local_model_id: str = field(
+        default="BAAI/bge-small-en-v1.5",
+        metadata={"description": "fastembed model id used by LocalEmbedder."},
+    )
+    api_model_id: str = field(
+        default="openai/text-embedding-3-small",
+        metadata={"description": "OpenRouter embeddings model id used by ApiEmbedder."},
+    )
+    cache_dir: str = field(
+        default="data/.rag-eval/embeddings_cache",
+        metadata={"description": "fastembed model download cache (gitignored)."},
+    )
+    batch_size: int = field(
+        default=32,
+        metadata={"description": "Maximum texts per embed call."},
+    )
+
+
+@dataclass(slots=True, kw_only=True)
 class RAGLLMConfig:
     """LLM configuration for the RAG/QA pipeline."""
 
@@ -215,6 +241,10 @@ class AppConfig(BaseModel):
     )
     eval_pipeline_config: EvalPipelineConfig = Field(
         description="Configuration settings for the eval data pipeline"
+    )
+    embeddings_config: EmbeddingsConfig = Field(
+        default_factory=EmbeddingsConfig,
+        description="Shared text-embedding configuration",
     )
     rag_config: RAGConfig = Field(
         description="Configuration settings for the RAG/QA pipeline"

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
   "fastapi[standard-no-fastapi-cloud-cli]>=0.140.13",
+  "fastembed>=0.8.0",
   "instructor>=1.15.4",
   "msgspec>=0.21.1",
   "omegaconf>=2.3.1",
@@ -27,7 +28,10 @@ dev = [
 source = ["src"]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-markers --cov=src --cov-report=term-missing --cov-fail-under=80"
+addopts = "-ra --strict-markers --cov=src --cov-report=term-missing --cov-fail-under=80 -m 'not slow'"
+markers = [
+  "slow: downloads model weights or makes network calls; deselected by default",
+]
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"

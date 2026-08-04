@@ -50,6 +50,13 @@ config:
       eval_dataset_path: "data/eval_dataset.jsonl"
       eval_dataset_labeled_path: "data/eval_dataset_labeled.jsonl"
 
+  embeddings_config:
+    provider: "local"
+    local_model_id: "BAAI/bge-small-en-v1.5"
+    api_model_id: "openai/text-embedding-3-small"
+    cache_dir: "data/.rag-eval/embeddings_cache"
+    batch_size: 32
+
   rag_config:
     llm:
       model_id: "deepseek/deepseek-v4-flash"
