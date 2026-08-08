@@ -2,13 +2,14 @@ from typing import Any
 
 from src.config.config import EmbeddingsConfig
 from src.embeddings.api import ApiEmbedder
+from src.embeddings.base import AbstractEmbedder
 from src.embeddings.local import LocalEmbedder
-from src.embeddings.port import EmbedderPort
 from src.embeddings.stub import StubEmbedder
+from src.schemas.types import EmbeddingProviderEnum
 
-__all__ = [
+__all__: list[str] = [
+    "AbstractEmbedder",
     "ApiEmbedder",
-    "EmbedderPort",
     "EmbeddingsConfig",
     "LocalEmbedder",
     "StubEmbedder",
@@ -17,19 +18,19 @@ __all__ = [
 ]
 
 
-def make_embedder(provider: str, **kwargs: Any) -> EmbedderPort:
+def make_embedder(provider: EmbeddingProviderEnum, **kwargs: Any) -> AbstractEmbedder:
     """Build an embedder by provider name.
 
     Parameters
     ----------
-    provider : str
+    provider : EmbeddingProviderEnum
         One of ``"local"``, ``"api"``, or ``"stub"``.
     **kwargs : Any
         Forwarded to the embedder constructor (e.g. ``model_id``, ``dim``).
 
     Returns
     -------
-    EmbedderPort
+    AbstractEmbedder
         An embedder instance for the given provider.
 
     Raises
@@ -37,16 +38,16 @@ def make_embedder(provider: str, **kwargs: Any) -> EmbedderPort:
     ValueError
         If ``provider`` is unknown.
     """
-    if provider == "local":
+    if provider == EmbeddingProviderEnum.LOCAL:
         return LocalEmbedder(**kwargs)
-    if provider == "api":
+    if provider == EmbeddingProviderEnum.API:
         return ApiEmbedder(**kwargs)
-    if provider == "stub":
+    if provider == EmbeddingProviderEnum.STUB:
         return StubEmbedder(**kwargs)
     raise ValueError(f"Unknown embeddings provider: {provider!r}")
 
 
-def get_embedder(cfg: EmbeddingsConfig) -> EmbedderPort:
+def get_embedder(cfg: EmbeddingsConfig) -> AbstractEmbedder:
     """Build the embedder selected by an ``EmbeddingsConfig``.
 
     Parameters
@@ -56,21 +57,24 @@ def get_embedder(cfg: EmbeddingsConfig) -> EmbedderPort:
 
     Returns
     -------
-    EmbedderPort
-        ``LocalEmbedder`` when ``cfg.provider == "local"``, otherwise
-        ``ApiEmbedder``.
+    AbstractEmbedder
+        ``LocalEmbedder`` when ``cfg.provider == "local"``, ``ApiEmbedder``
+        when ``cfg.provider == "api"``, or ``StubEmbedder`` when
+        ``cfg.provider == "stub"``.
 
     Raises
     ------
     ValueError
-        If ``cfg.provider`` is not ``"local"`` or ``"api"``.
+        If ``cfg.provider`` is not ``"local"``, ``"api"``, or ``"stub"``.
     """
-    if cfg.provider == "local":
+    if cfg.provider == EmbeddingProviderEnum.LOCAL:
         return LocalEmbedder(
             model_id=cfg.local_model_id,
             cache_dir=cfg.cache_dir,
             batch_size=cfg.batch_size,
         )
-    if cfg.provider == "api":
+    if cfg.provider == EmbeddingProviderEnum.API:
         return ApiEmbedder(model_id=cfg.api_model_id, batch_size=cfg.batch_size)
+    if cfg.provider == EmbeddingProviderEnum.STUB:
+        return StubEmbedder()
     raise ValueError(f"Unknown embeddings provider: {cfg.provider!r}")

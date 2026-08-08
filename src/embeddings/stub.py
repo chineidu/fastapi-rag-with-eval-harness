@@ -1,8 +1,10 @@
 import hashlib
 import random
 
+from src.embeddings.base import AbstractEmbedder
 
-class StubEmbedder:
+
+class StubEmbedder(AbstractEmbedder):
     """Deterministic embedder for tests and offline pipelines.
 
     Vectors are seeded from the SHA-256 of each text, so identical inputs
@@ -14,13 +16,9 @@ class StubEmbedder:
         self.model_id = model_id
         self._dim = dim
 
-    @property
-    def dim(self) -> int:
-        return self._dim
-
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+    def _embed_batch(self, batch: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
-        for text in texts:
+        for text in batch:
             digest = hashlib.sha256(text.encode("utf-8")).digest()[:8]
             seed = int.from_bytes(digest, byteorder="big")
             rng = random.Random(seed)

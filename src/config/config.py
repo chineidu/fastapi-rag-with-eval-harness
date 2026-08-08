@@ -163,7 +163,9 @@ class EmbeddingsConfig:
 
     provider: str = field(
         default="local",
-        metadata={"description": "Active embeddings provider: 'local' or 'api'."},
+        metadata={
+            "description": "Active embeddings provider: 'local', 'api', or 'stub'."
+        },
     )
     local_model_id: str = field(
         default="BAAI/bge-small-en-v1.5",

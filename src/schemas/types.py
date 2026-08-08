@@ -2,6 +2,7 @@ from enum import StrEnum
 from typing import NamedTuple
 
 
+# ======= Enums =======
 class EnvironmentEnum(StrEnum):
     DEVELOPMENT = "development"
     PRODUCTION = "production"
@@ -23,6 +24,16 @@ class ClassificationLabel(StrEnum):
     CONCEPTUAL = "CONCEPTUAL"
 
 
+class EmbeddingProviderEnum(StrEnum):
+    """Embedding providers for the eval dataset."""
+
+    LOCAL = "local"
+    API = "api"
+    # Deterministic fake for tests/offline pipelines; no model weights or network access.
+    STUB = "stub"
+
+
+# ======= NamedTuples =======
 class RepoHandle(NamedTuple):
     """A pair of immutable strings representing the owner and name of a GitHub repository."""
 

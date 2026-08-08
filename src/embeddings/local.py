@@ -1,5 +1,7 @@
 from fastembed import TextEmbedding
 
+from src.embeddings.base import AbstractEmbedder
+
 _DEFAULT_MODEL_ID = "BAAI/bge-small-en-v1.5"
 
 _KNOWN_DIMS: dict[str, int] = {
@@ -9,7 +11,7 @@ _KNOWN_DIMS: dict[str, int] = {
 }
 
 
-class LocalEmbedder:
+class LocalEmbedder(AbstractEmbedder):
     """Local ONNX embedder backed by fastembed.
 
     The model is loaded lazily on the first ``embed_texts`` call, so
@@ -32,26 +34,17 @@ class LocalEmbedder:
         self._dim = dim if dim is not None else _KNOWN_DIMS.get(model_id)
         self._model: TextEmbedding | None = None
 
-    @property
-    def dim(self) -> int:
-        if self._dim is None:
-            self._dim = len(self.embed_texts(["probe"])[0])
-        return self._dim
-
     def _ensure_model(self) -> TextEmbedding:
+        """Lazily load the model."""
         if self._model is None:
             self._model = TextEmbedding(
                 model_name=self.model_id, cache_dir=self._cache_dir
             )
         return self._model
 
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+    def _embed_batch(self, batch: list[str]) -> list[list[float]]:
         model = self._ensure_model()
-        vectors: list[list[float]] = []
-        for start in range(0, len(texts), self._batch_size):
-            batch = texts[start : start + self._batch_size]
-            for vector in model.embed(batch):
-                vectors.append(list(map(float, vector)))
-        if self._dim is None and vectors:
-            self._dim = len(vectors[0])
-        return vectors
+        # model.embed(batch) yields a numpy array per text; e.g. for
+        # batch=["a", "b"] it yields two arrays of shape (384,), which
+        # are converted to two lists of 384 floats.
+        return [list(map(float, vector)) for vector in model.embed(batch)]
