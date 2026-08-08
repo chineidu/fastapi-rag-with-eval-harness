@@ -1,5 +1,10 @@
+"""Remove all non-English language directories from the FastAPI docs corpus."""
+
+import logging
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 DOCS_DIR = Path("docs/fastapi/docs")
 KEEP = {"en"}
@@ -7,18 +12,19 @@ KEEP = {"en"}
 
 def main() -> None:
     """Remove all non-English language directories from the FastAPI docs corpus."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     if not DOCS_DIR.is_dir():
-        print(f"Directory not found: {DOCS_DIR}")
+        logger.error("Directory not found: %s", DOCS_DIR)
         raise SystemExit(1)
 
     removed = 0
     for entry in sorted(DOCS_DIR.iterdir()):
         if entry.is_dir() and entry.name not in KEEP:
             shutil.rmtree(entry)
-            print(f"Removed {entry}")
+            logger.info("Removed %s", entry)
             removed += 1
 
-    print(f"Done. Removed {removed} directories.")
+    logger.info("Done. Removed %d directories.", removed)
 
 
 if __name__ == "__main__":

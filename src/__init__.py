@@ -1,5 +1,4 @@
-"""
-Asynchronous, non-blocking logging configuration for the application.
+"""Asynchronous, non-blocking logging configuration for the application.
 
 This module provides a production-grade logging setup based on Python's
 QueueHandler / QueueListener pattern. The primary goals are:
@@ -208,14 +207,14 @@ def create_logger(
     structured: bool = False,
     log_file: str | Path | None = None,
 ) -> logging.Logger:
-    """
-    Create or return a non-blocking logger.
+    """Create or return a non-blocking logger.
 
     Notes
     -----
     - Logging configuration is process-wide.
     - The first call initializes the logging system.
     - Structured logging cannot be changed after initialization.
+
     """
     if name == "__main__":
         frame = inspect.currentframe()

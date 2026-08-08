@@ -157,6 +157,7 @@ async def aclassify_eval_data(
     -------
     list[ClassificationResponse]
         One prediction per input record, in the same order.
+
     """
     tasks = [_aclassify_single(r) for r in records]
     return await asyncio.gather(*tasks)

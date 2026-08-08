@@ -126,7 +126,10 @@ class TestCleanQueryTextGithub:
         assert clean_query_text("", "github", "Just a title") == "Just a title"
 
     def test_drops_other_template_headers_when_no_description(self) -> None:
-        body = "### Privileged issue\n\n- [x] I'm @tiangolo\n\n### Issue Content\n\n## Description\nFixed a typo."
+        body = (
+            "### Privileged issue\n\n- [x] I'm @tiangolo\n\n"
+            "### Issue Content\n\n## Description\nFixed a typo."
+        )
         result = clean_query_text(body, "github", "docs: Fix typo")
         assert "Fixed a typo." in result
         assert "Privileged issue" not in result

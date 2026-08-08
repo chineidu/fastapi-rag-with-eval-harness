@@ -1,3 +1,5 @@
+"""Environment settings loaded from pydantic-settings and dotenv."""
+
 import os
 from pathlib import Path
 
@@ -16,7 +18,7 @@ class BaseConfig(BaseSettings):
 
     # ===== API SERVER =====
     ENV: EnvironmentEnum = EnvironmentEnum.DEVELOPMENT
-    HOST: str = "0.0.0.0"
+    HOST: str = "0.0.0.0"  # noqa: S104 - dev server default binds all interfaces
     PORT: int = 8000
     WORKERS: int = 1
 
@@ -29,7 +31,7 @@ class BaseConfig(BaseSettings):
     @field_validator("PORT", mode="before")
     @classmethod
     def parse_port_fields(cls, v: str | int) -> int:
-        """Parses port fields to ensure they are integers."""
+        """Parse port fields to ensure they are integers."""
         if isinstance(v, str):
             try:
                 return int(v.strip())
@@ -109,6 +111,7 @@ def refresh_settings() -> ConfigType:
     -------
     ConfigType
         An instance of the appropriate Settings subclass based on the ENV variable.
+
     """
     load_dotenv(override=True)
     # Determine environment type; `development` is the default

@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+from pathlib import Path
 
 import pytest
 
@@ -84,6 +85,8 @@ class TestCreateLogger:
         with pytest.warns(UserWarning, match="level"):
             create_logger("warn_test_2", level=logging.DEBUG)
 
-    def test_warns_when_reinitialized_with_different_log_file(self) -> None:
+    def test_warns_when_reinitialized_with_different_log_file(
+        self, tmp_path: Path
+    ) -> None:
         with pytest.warns(UserWarning, match="log_file"):
-            create_logger("warn_test_3", log_file="/tmp/fake.log")
+            create_logger("warn_test_3", log_file=str(tmp_path / "fake.log"))

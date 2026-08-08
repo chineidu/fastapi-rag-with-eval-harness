@@ -1,3 +1,5 @@
+"""Local ONNX embedder backed by fastembed."""
+
 from fastembed import TextEmbedding
 
 from src.embeddings.base import AbstractEmbedder
@@ -28,6 +30,21 @@ class LocalEmbedder(AbstractEmbedder):
         batch_size: int = 32,
         dim: int | None = None,
     ) -> None:
+        """Configure the local embedder.
+
+        Parameters
+        ----------
+        model_id : str
+            fastembed model name.
+        cache_dir : str | None
+            Directory for downloaded model weights.
+        batch_size : int
+            Number of texts embedded per batch.
+        dim : int | None
+            Known embedding dimension; resolved from a lookup table or
+            probed lazily when ``None``.
+
+        """
         self.model_id = model_id
         self._cache_dir = cache_dir
         self._batch_size = batch_size

@@ -1,3 +1,5 @@
+"""Normalize fetched GitHub/Stack Overflow data into a unified eval dataset."""
+
 from datetime import UTC, datetime
 from pathlib import Path
 

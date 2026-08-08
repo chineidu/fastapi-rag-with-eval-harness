@@ -1,3 +1,5 @@
+"""Text cleaning helpers for ground-truth query extraction."""
+
 import html
 import re
 
@@ -25,7 +27,7 @@ def strip_html(text: str) -> str:
 
 
 def _normalize_line_endings(text: str) -> str:
-    """Convert CRLF/CR line endings to LF.
+    r"""Convert CRLF/CR line endings to LF.
 
     Examples
     --------
@@ -36,6 +38,7 @@ def _normalize_line_endings(text: str) -> str:
     'line 1\\r\\nline 2\\rline 3\\n'
     >>> _normalize_line_endings(text)  # after
     'line 1\\nline 2\\nline 3\\n'
+
     """
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
@@ -122,6 +125,7 @@ def clean_query_text(body: str, source: str, title: str = "") -> str:
     str
         Cleaned question text suitable for the ``query_text`` field of
         ground truth.
+
     """
     if source != "github":
         return strip_html(body)

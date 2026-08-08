@@ -66,6 +66,7 @@ class AbstractEmbedder(ABC):
         list[list[float]]
             One vector per input text, in the same order.
             Each vector has length ``self.dim``.
+
         """
         return await asyncio.to_thread(self.embed_texts, texts)
 

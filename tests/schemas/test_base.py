@@ -25,6 +25,8 @@ class TestRoundProbability:
 
 class TestFloatAnnotation:
     class Model(BaseSchema):
+        """Sample model using the rounded float annotation."""
+
         score: Float
 
     def test_valid_float_is_rounded(self) -> None:
@@ -38,6 +40,8 @@ class TestFloatAnnotation:
 
 class TestBaseSchemaConfig:
     class Sample(BaseSchema):
+        """Sample model exercising camelCase aliasing and frozen config."""
+
         first_name: str
         last_name: str
         age: int

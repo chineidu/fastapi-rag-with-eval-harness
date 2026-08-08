@@ -7,6 +7,7 @@ class FakeEmbeddingsApi:
     """Records calls and returns canned embeddings without any network."""
 
     def __init__(self, calls: list[tuple[str, list[str]]]) -> None:
+        """Record every request into the shared calls list."""
         self._calls = calls
 
     def create(self, model: str, input: list[str]) -> SimpleNamespace:
@@ -23,6 +24,7 @@ class FakeClient:
     """Minimal stand-in for ``openai.OpenAI`` exposing ``embeddings.create``."""
 
     def __init__(self) -> None:
+        """Build a fake client with an empty calls list."""
         self.calls: list[tuple[str, list[str]]] = []
         self.embeddings = FakeEmbeddingsApi(self.calls)
 

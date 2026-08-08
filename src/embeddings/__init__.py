@@ -1,3 +1,5 @@
+"""Embedder factory and public embedder classes."""
+
 from typing import Any
 
 from src.config.config import EmbeddingsConfig
@@ -37,6 +39,7 @@ def make_embedder(provider: EmbeddingProviderEnum, **kwargs: Any) -> AbstractEmb
     ------
     ValueError
         If ``provider`` is unknown.
+
     """
     if provider == EmbeddingProviderEnum.LOCAL:
         return LocalEmbedder(**kwargs)
@@ -66,6 +69,7 @@ def get_embedder(cfg: EmbeddingsConfig) -> AbstractEmbedder:
     ------
     ValueError
         If ``cfg.provider`` is not ``"local"``, ``"api"``, or ``"stub"``.
+
     """
     if cfg.provider == EmbeddingProviderEnum.LOCAL:
         return LocalEmbedder(

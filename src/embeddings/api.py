@@ -1,3 +1,5 @@
+"""Cloud embedder via an OpenAI-compatible /embeddings endpoint."""
+
 from typing import Any
 
 import openai
@@ -28,6 +30,20 @@ class ApiEmbedder(AbstractEmbedder):
         dim: int | None = None,
         client: Any = None,
     ) -> None:
+        """Configure the cloud embedder.
+
+        Parameters
+        ----------
+        model_id : str
+            Embedding model id served by the endpoint.
+        batch_size : int
+            Number of texts sent per API request.
+        dim : int | None
+            Known embedding dimension; probed lazily when ``None``.
+        client : Any
+            Injectable ``openai.OpenAI``-compatible client for testing.
+
+        """
         self.model_id = model_id
         self._batch_size = batch_size
         self._dim = dim if dim is not None else _KNOWN_DIMS.get(model_id)
@@ -75,6 +91,7 @@ class ApiEmbedder(AbstractEmbedder):
         list[list[float]]
             One vector per input text, in the same order.
             Each vector has length ``self.dim``.
+
         """
         vectors: list[list[float]] = []
         for start in range(0, len(texts), self._batch_size):

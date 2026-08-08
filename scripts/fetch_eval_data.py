@@ -1,3 +1,5 @@
+"""Fetch the eval dataset from GitHub Discussions and Stack Overflow."""
+
 import asyncio
 import urllib.parse
 from collections import defaultdict
@@ -401,7 +403,8 @@ async def afetch_stack_exchange_data(
             # e.g. .../questions/12345;67890;11121/answers
             answers_data = await _fetch_stack_exchange_page(
                 client,
-                f"{app_config.eval_pipeline_config.stack_exchange.api_url}/questions/{';'.join(map(str, question_ids))}/answers",
+                f"{app_config.eval_pipeline_config.stack_exchange.api_url}"
+                f"/questions/{';'.join(map(str, question_ids))}/answers",
                 answers_params,
             )
 

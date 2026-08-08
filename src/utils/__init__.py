@@ -1,3 +1,5 @@
+"""Shared utility helpers for IO and text processing."""
+
 from src.utils.io import read_jsonl, write_jsonl
 from src.utils.text import strip_html
 

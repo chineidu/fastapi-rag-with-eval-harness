@@ -1,3 +1,5 @@
+"""JSONL read/write helpers for the eval pipeline."""
+
 import json
 from collections.abc import Sequence
 from pathlib import Path

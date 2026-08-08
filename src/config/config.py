@@ -1,3 +1,5 @@
+"""Application configuration dataclasses backed by an OmegaConf YAML file."""
+
 from dataclasses import dataclass, field
 from pathlib import Path
 

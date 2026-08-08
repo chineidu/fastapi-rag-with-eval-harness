@@ -1,3 +1,5 @@
+"""Shared Pydantic base models and field validators."""
+
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
@@ -9,13 +11,16 @@ def round_probability(value: Any) -> Any:
 
     Parameters
     ----------
-        value (Any): The value to be rounded. Non-numeric values are passed
-            through unchanged so Pydantic can apply its own validation.
+    value : Any
+        The value to be rounded. Non-numeric values are passed through
+        unchanged so Pydantic can apply its own validation.
 
     Returns
     -------
-        Any: The rounded value, or the original value if it cannot be coerced
-            to a float.
+    Any
+        The rounded value, or the original value if it cannot be coerced
+        to a float.
+
     """
     try:
         return round(float(value), 2)
