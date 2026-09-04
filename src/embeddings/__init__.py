@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from src.config.config import EmbeddingsConfig
 from src.embeddings.api import ApiEmbedder
 from src.embeddings.base import AbstractEmbedder
 from src.embeddings.local import LocalEmbedder
 from src.embeddings.stub import StubEmbedder
+from src.schemas.containers import EmbeddingsConfig
 from src.schemas.types import EmbeddingProviderEnum
 
 __all__: list[str] = [

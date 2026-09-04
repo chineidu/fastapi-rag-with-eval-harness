@@ -1,0 +1,12 @@
+# Harness config (committed). CLI flags override these values.
+adapter: "app.adapter:Retriever"
+ground_truth: data/ground_truth.json
+db: data/.rag-eval/runs.db
+
+defaults:
+  k: 10
+  concurrency: 3
+
+diff:
+  threshold_absolute: 0.05
+  threshold_relative: 5

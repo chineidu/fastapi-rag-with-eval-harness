@@ -39,6 +39,22 @@ class EmbeddingProviderEnum(StrEnum):
     STUB = "stub"
 
 
+class RunStatus(StrEnum):
+    """Lifecycle states for an eval run."""
+
+    RUNNING = "running"
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+
+
+class QueryResultStatus(StrEnum):
+    """Per-query outcome states stored in ``query_results.status``."""
+
+    SUCCESS = "success"
+    RECOVERABLE = "recoverable"
+    FATAL = "fatal"
+
+
 # ======= NamedTuples =======
 class RepoHandle(NamedTuple):
     """A pair of immutable strings representing the owner and name of a GitHub repository."""

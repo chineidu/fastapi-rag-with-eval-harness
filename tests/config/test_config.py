@@ -1,10 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from src.config.config import (
+from src.config.config import app_config
+from src.schemas.containers import (
     CORS,
     APIConfig,
-    AppConfig,
     ClassifierConfig,
     DatabaseConfig,
     EvalDefaultsConfig,
@@ -14,8 +14,8 @@ from src.config.config import (
     RAGConfig,
     RAGLLMConfig,
     StackExchangeEvalConfig,
-    app_config,
 )
+from src.schemas.models import AppConfig
 
 
 class TestCORS:

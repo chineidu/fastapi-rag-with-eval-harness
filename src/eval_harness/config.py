@@ -1,0 +1,177 @@
+"""OmegaConf-backed harness configuration (``.rag-eval.yaml``)."""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from omegaconf import OmegaConf
+
+DEFAULT_DB = "data/.rag-eval/runs.db"
+DEFAULT_GROUND_TRUTH = "data/ground_truth.json"
+DEFAULT_CONFIG_PATH = Path(".rag-eval.yaml")
+
+
+@dataclass(slots=True, kw_only=True)
+class HarnessDefaults:
+    """Default CLI argument values for harness commands."""
+
+    k: int = 10
+    concurrency: int = 3
+
+
+@dataclass(slots=True, kw_only=True)
+class HarnessDiffThresholds:
+    """Thresholds that mark a category delta as a significant regression."""
+
+    threshold_absolute: float = 0.05
+    threshold_relative: float = 5.0
+
+
+@dataclass(slots=True, kw_only=True)
+class HarnessConfig:
+    """Resolved harness configuration (file config with CLI overrides applied)."""
+
+    adapter: str = ""
+    ground_truth: str = DEFAULT_GROUND_TRUTH
+    db: str = DEFAULT_DB
+    defaults: HarnessDefaults = field(default_factory=HarnessDefaults)
+    diff: HarnessDiffThresholds = field(default_factory=HarnessDiffThresholds)
+
+
+def _from_dict(data: dict[str, Any]) -> HarnessConfig:
+    """Build a validated ``HarnessConfig`` from a plain dict.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        Raw config mapping (e.g. from ``OmegaConf.to_container``).
+
+    Returns
+    -------
+    HarnessConfig
+        Validated config.
+
+    Raises
+    ------
+    ValueError
+        If ``k``, ``concurrency``, or thresholds are out of range.
+
+    """
+    defaults_raw = data.get("defaults", {}) or {}
+    diff_raw = data.get("diff", {}) or {}
+    cfg = HarnessConfig(
+        adapter=str(data.get("adapter", "")),
+        ground_truth=str(data.get("ground_truth", DEFAULT_GROUND_TRUTH)),
+        db=str(data.get("db", DEFAULT_DB)),
+        defaults=HarnessDefaults(
+            k=int(defaults_raw.get("k", 10)),
+            concurrency=int(defaults_raw.get("concurrency", 3)),
+        ),
+        diff=HarnessDiffThresholds(
+            threshold_absolute=float(diff_raw.get("threshold_absolute", 0.05)),
+            threshold_relative=float(diff_raw.get("threshold_relative", 5.0)),
+        ),
+    )
+    if cfg.defaults.k <= 0:
+        raise ValueError(f"k must be positive, got {cfg.defaults.k}")
+    if cfg.defaults.concurrency <= 0:
+        raise ValueError(
+            f"concurrency must be positive, got {cfg.defaults.concurrency}"
+        )
+    if cfg.diff.threshold_absolute < 0:
+        raise ValueError("threshold_absolute must not be negative")
+    if cfg.diff.threshold_relative < 0:
+        raise ValueError("threshold_relative must not be negative")
+    return cfg
+
+
+def load_harness_config(path: Path | str | None = None) -> HarnessConfig:
+    """Load harness config from YAML, falling back to defaults when missing.
+
+    Parameters
+    ----------
+    path : Path | str | None
+        Explicit config path. When ``None``, ``.rag-eval.yaml`` in the
+        current directory is used if it exists.
+
+    Returns
+    -------
+    HarnessConfig
+        Merged file config over built-in defaults.
+
+    """
+    candidate = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    base = OmegaConf.structured(HarnessConfig)
+    if not candidate.exists():
+        merged = base
+    else:
+        file_cfg = OmegaConf.load(str(candidate))
+        merged = OmegaConf.merge(base, file_cfg)
+    raw = OmegaConf.to_container(merged, resolve=True)
+    if not isinstance(raw, dict):
+        raise TypeError(f"Invalid harness config in {candidate}")
+    data: dict[str, Any] = {str(key): value for key, value in raw.items()}
+    return _from_dict(data)
+
+
+def apply_cli_overrides(
+    cfg: HarnessConfig,
+    *,
+    adapter: str | None = None,
+    ground_truth: str | None = None,
+    db: str | None = None,
+    k: int | None = None,
+    concurrency: int | None = None,
+    threshold_absolute: float | None = None,
+    threshold_relative: float | None = None,
+) -> HarnessConfig:
+    """Apply CLI values over a file config (CLI wins when not ``None``).
+
+    Parameters
+    ----------
+    cfg : HarnessConfig
+        File-loaded config.
+    adapter : str | None
+        Adapter import path override.
+    ground_truth : str | None
+        Ground truth path override.
+    db : str | None
+        SQLite path override.
+    k : int | None
+        Retrieval depth override.
+    concurrency : int | None
+        Concurrency override.
+    threshold_absolute : float | None
+        Absolute diff threshold override.
+    threshold_relative : float | None
+        Relative diff threshold override (percent).
+
+    Returns
+    -------
+    HarnessConfig
+        New config with overrides applied.
+
+    """
+    return HarnessConfig(
+        adapter=adapter if adapter is not None else cfg.adapter,
+        ground_truth=ground_truth if ground_truth is not None else cfg.ground_truth,
+        db=db if db is not None else cfg.db,
+        defaults=HarnessDefaults(
+            k=k if k is not None else cfg.defaults.k,
+            concurrency=concurrency
+            if concurrency is not None
+            else cfg.defaults.concurrency,
+        ),
+        diff=HarnessDiffThresholds(
+            threshold_absolute=(
+                threshold_absolute
+                if threshold_absolute is not None
+                else cfg.diff.threshold_absolute
+            ),
+            threshold_relative=(
+                threshold_relative
+                if threshold_relative is not None
+                else cfg.diff.threshold_relative
+            ),
+        ),
+    )
