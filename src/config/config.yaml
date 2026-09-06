@@ -49,6 +49,14 @@ config:
       stackoverflow_questions_path: "data/fastapi_stackoverflow.jsonl"
       eval_dataset_path: "data/eval_dataset.jsonl"
       eval_dataset_labeled_path: "data/eval_dataset_labeled.jsonl"
+    labeling:
+      corpus_md_root: "docs/fastapi/docs/en/docs"
+      corpus_py_root: "docs/fastapi/docs_src"
+      ground_truth_output: "data/ground_truth.json"
+      top_k: 30
+      concurrency: 3
+      max_content_length: 2000
+      max_judge_content_length: 4000
 
   embeddings_config:
     provider: "local"

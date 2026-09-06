@@ -28,6 +28,7 @@ class ClassificationLabel(StrEnum):
     DIRECT_LOOKUP = "DIRECT_LOOKUP"
     MULTI_HOP = "MULTI_HOP"
     CONCEPTUAL = "CONCEPTUAL"
+    UNKNOWN = "UNKNOWN"
 
 
 class EmbeddingProviderEnum(StrEnum):
@@ -37,6 +38,13 @@ class EmbeddingProviderEnum(StrEnum):
     API = "api"
     # Deterministic fake for tests/offline pipelines; no model weights or network access.
     STUB = "stub"
+
+
+class VerdictEnum(StrEnum):
+    """Binary relevance verdicts for the LLM judge."""
+
+    RELEVANT = "relevant"
+    IRRELEVANT = "irrelevant"
 
 
 class RunStatus(StrEnum):

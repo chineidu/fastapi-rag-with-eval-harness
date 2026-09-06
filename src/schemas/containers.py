@@ -213,6 +213,40 @@ class RAGConfig:
 
 
 @dataclass(slots=True, kw_only=True)
+class LabelingConfig:
+    """Ground-truth labeling pipeline configuration."""
+
+    corpus_md_root: str = field(
+        default="docs/fastapi/docs/en/docs",
+        metadata={"description": "Root directory for markdown corpus files."},
+    )
+    corpus_py_root: str = field(
+        default="docs/fastapi/docs_src",
+        metadata={"description": "Root directory for Python corpus files."},
+    )
+    ground_truth_output: str = field(
+        default="data/ground_truth.json",
+        metadata={"description": "Output path for ground truth JSON."},
+    )
+    top_k: int = field(
+        default=30,
+        metadata={"description": "Candidates per query for LLM judge."},
+    )
+    concurrency: int = field(
+        default=3,
+        metadata={"description": "Max parallel LLM judge calls."},
+    )
+    max_content_length: int = field(
+        default=2000,
+        metadata={"description": "Max characters of doc content sent to embedder."},
+    )
+    max_judge_content_length: int = field(
+        default=4000,
+        metadata={"description": "Max characters of doc content sent to LLM judge."},
+    )
+
+
+@dataclass(slots=True, kw_only=True)
 class EvalPipelineConfig:
     """Eval data pipeline configuration."""
 
@@ -227,4 +261,8 @@ class EvalPipelineConfig:
     )
     defaults: EvalDefaultsConfig = field(
         metadata={"description": "Default CLI argument values."}
+    )
+    labeling: LabelingConfig = field(
+        default_factory=LabelingConfig,
+        metadata={"description": "Ground-truth labeling pipeline settings."},
     )

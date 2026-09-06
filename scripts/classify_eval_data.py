@@ -15,12 +15,12 @@ from pathlib import Path
 import instructor
 import openai
 import typer
-from pydantic import BaseModel, Field
 
 from src import create_logger
 from src.config import app_config, app_settings
+from src.prompts import CLASSIFY_SYSTEM_PROMPT
+from src.schemas.ground_truth import ClassificationResponse
 from src.schemas.output import UnifiedEvalRecordSchema
-from src.schemas.types import ClassificationLabel
 from src.utils import read_jsonl, write_jsonl
 
 logger = create_logger(name=__name__)
@@ -41,80 +41,6 @@ openai_aclient = openai.AsyncOpenAI(
 # 2. Patch it with Instructor
 aclient = instructor.from_openai(openai_aclient)
 
-# 3. Real few-shot examples sampled from data/eval_dataset.jsonl
-_FEW_SHOT: list[dict[str, str | ClassificationLabel]] = [
-    {
-        "text": (
-            "Title: How do I return an image in FastAPI?\n\n"
-            "Body:\n"
-            "Using the python module FastAPI, I can't figure out how to return an image. "
-            "In flask I would do something like this:\n"
-            '@app.route("/vector_image", methods=["POST"])\n'
-            "def image_endpoint():\n"
-            '    return Response(img, mimetype="image/png")\n\n'
-            "what's the corresponding call in this module?"
-        ),
-        "label": ClassificationLabel.DIRECT_LOOKUP,
-    },
-    {
-        "text": (
-            "Title: How to add both file and JSON body in a FastAPI POST request?\n\n"
-            "Body:\n"
-            "I am trying to upload both a file and JSON data, as shown in the example "
-            "below, but it is not working. If this is not the proper way for a POST "
-            "request, please let me know how to select the required columns from an "
-            "uploaded CSV file in FastAPI."
-        ),
-        "label": ClassificationLabel.MULTI_HOP,
-    },
-    {
-        "text": (
-            "Title: What are the best practices for structuring a FastAPI project?\n\n"
-            "Body:\n"
-            "The problem that I want to solve related the project setup:\n\n"
-            "Good names of directories so that their purpose is clear.\n"
-            "Keeping all project files (including virtualenv) in one place, so I\n"
-            "can easily copy, move, archive, remove the whole project, or estimate "
-            "disk space usage.\n"
-            "Creating multiple copies of some selected file sets such as entire\n"
-            "application, repository, or virtualenv, while keeping a single copy of\n"
-            "other files that I don't want to clone.\n"
-            "Deploying the right set of files to the server simply by resyncing\n"
-            "selected one dir.\n"
-            "handling both frontend and backend nicely."
-        ),
-        "label": ClassificationLabel.CONCEPTUAL,
-    },
-]
-
-_SYSTEM_PROMPT = f"""\
-You are a world-class text classification engine. Classify FastAPI support \
-questions into one of three categories:
-
-- DIRECT_LOOKUP: Answerable from a single concrete fact in the docs. The user \
-asks "how do I do X" where X is a specific, well-documented feature.
-- MULTI_HOP: Requires combining multiple features or concepts. The user needs \
-to connect several pieces of information to solve their problem.
-- CONCEPTUAL: About design, architecture, trade-offs, best practices, or \
-opinions. Not tied to a single doc page.
-
-Examples:
-
-{"\n".join(f"Input:\n{ex['text']}\nLabel: {ex['label']}" for ex in _FEW_SHOT)}"""
-
-
-class ClassificationResponse(BaseModel):
-    """Predicted label for a single eval record, with chain-of-thought."""
-
-    chain_of_thought: str = Field(
-        ...,
-        description="The chain of thought that led to the prediction. Max 2 sentences.",
-    )
-    label: ClassificationLabel = Field(
-        ...,
-        description="The predicted class label.",
-    )
-
 
 def _build_text(record: UnifiedEvalRecordSchema) -> str:
     """Build the classifier input from a record, truncating to MAX_INPUT_LENGTH."""
@@ -134,7 +60,7 @@ async def _aclassify_single(record: UnifiedEvalRecordSchema) -> ClassificationRe
         temperature=app_config.eval_pipeline_config.classifier.temperature,
         seed=app_config.eval_pipeline_config.classifier.seed,
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": CLASSIFY_SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": f"Input:\n{text}\n\nLabel:",

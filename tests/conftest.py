@@ -29,6 +29,12 @@ def normalize_eval_data():
     return _import_script("normalize_eval_data")
 
 
+@pytest.fixture(scope="session")
+def label_ground_truth():
+    """Import scripts/label_ground_truth.py as a module."""
+    return _import_script("label_ground_truth")
+
+
 @pytest.fixture
 def github_node_payload() -> dict[str, Any]:
     return {
