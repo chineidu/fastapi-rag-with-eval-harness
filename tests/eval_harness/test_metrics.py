@@ -174,7 +174,7 @@ class TestScoredQuery:
 
         # When / Then
         with pytest.raises(FrozenInstanceError):
-            sq.query_id = "q2"  # type: ignore[misc]
+            sq.query_id = "q2"  # type: ignore
 
 
 class TestAggregateScores:

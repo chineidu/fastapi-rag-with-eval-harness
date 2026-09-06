@@ -43,7 +43,7 @@ class TestIsRecoverable:
         """Given an exception with status_code=500, then it is recoverable."""
         # Given
         exc = Exception()
-        exc.status_code = 500  # type: ignore[attr-defined]
+        exc.status_code = 500  # type: ignore
 
         # When / Then
         assert is_recoverable(exc) is True
@@ -52,7 +52,7 @@ class TestIsRecoverable:
         """Given an exception with status_code=404, then it is not recoverable."""
         # Given
         exc = Exception()
-        exc.status_code = 404  # type: ignore[attr-defined]
+        exc.status_code = 404  # type: ignore
 
         # When / Then
         assert is_recoverable(exc) is False
@@ -61,8 +61,8 @@ class TestIsRecoverable:
         """Given an exception with response.status_code=503, then it is recoverable."""
         # Given
         exc = Exception()
-        exc.response = Exception()  # type: ignore[attr-defined]
-        exc.response.status_code = 503  # type: ignore[attr-defined]
+        exc.response = Exception()  # type: ignore
+        exc.response.status_code = 503  # type: ignore
 
         # When / Then
         assert is_recoverable(exc) is True
@@ -71,7 +71,7 @@ class TestIsRecoverable:
         """Given an exception with non-int status_code, then it is not recoverable."""
         # Given
         exc = Exception()
-        exc.status_code = "500"  # type: ignore[attr-defined]
+        exc.status_code = "500"  # type: ignore
 
         # When / Then
         assert is_recoverable(exc) is False
@@ -100,7 +100,7 @@ class TestValidateResult:
     def test_wrong_entry_length_raises(self) -> None:
         """Given a document entry with wrong length, then ValueError is raised."""
         # Given
-        result = RetrievalResult(documents=[("a.md", 0.9, "extra")])  # type: ignore[list-item]
+        result = RetrievalResult(documents=[("a.md", 0.9, "extra")])  # type: ignore
 
         # When / Then
         with pytest.raises(ValueError, match="Malformed"):
@@ -109,7 +109,7 @@ class TestValidateResult:
     def test_non_string_doc_path_raises(self) -> None:
         """Given a document entry with non-string path, then ValueError is raised."""
         # Given
-        result = RetrievalResult(documents=[(123, 0.9)])  # type: ignore[list-item]
+        result = RetrievalResult(documents=[(123, 0.9)])  # type: ignore
 
         # When / Then
         with pytest.raises(ValueError, match="Malformed"):
@@ -118,7 +118,7 @@ class TestValidateResult:
     def test_non_numeric_score_raises(self) -> None:
         """Given a document entry with non-numeric score, then ValueError is raised."""
         # Given
-        result = RetrievalResult(documents=[("a.md", "high")])  # type: ignore[list-item]
+        result = RetrievalResult(documents=[("a.md", "high")])  # type: ignore
 
         # When / Then
         with pytest.raises(ValueError, match="Malformed"):
@@ -127,7 +127,7 @@ class TestValidateResult:
     def test_list_entry_is_accepted(self) -> None:
         """Given a document entry as list, then it is accepted."""
         # Given
-        result = RetrievalResult(documents=[["a.md", 0.9]])  # type: ignore[list-item]
+        result = RetrievalResult(documents=[["a.md", 0.9]])  # type: ignore
 
         # When
         validated = validate_result(result)
