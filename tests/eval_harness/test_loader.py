@@ -123,6 +123,27 @@ class TestGroundTruthLoaderLoad:
         with pytest.raises(ValueError, match="Invalid ground truth record"):
             GroundTruthLoader.load(data_file)
 
+    def test_loads_unanswerable_record(self, tmp_path) -> None:
+        """Given an unanswerable record (empty relevant_docs), then it loads."""
+        # Given
+        data_file = tmp_path / "ground_truth.jsonl"
+        unanswerable = {
+            "query_id": "q-unans",
+            "label": "MULTI_HOP",
+            "query_text": "Question with no doc answer",
+            "relevant_docs": [],
+            "answerable": False,
+        }
+        data_file.write_text(json.dumps(unanswerable) + "\n")
+
+        # When
+        result = GroundTruthLoader.load(data_file)
+
+        # Then
+        assert len(result) == 1
+        assert result[0].answerable is False
+        assert result[0].relevant_docs == []
+
     def test_invalid_json_raises(self, tmp_path) -> None:
         """Given invalid JSON content, then ValueError is raised."""
         # Given

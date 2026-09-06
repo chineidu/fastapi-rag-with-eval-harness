@@ -20,6 +20,7 @@ import instructor
 import numpy as np
 import openai
 import typer
+from anyio import Path as AsyncPath
 
 from src import create_logger
 from src.config import app_config, app_settings
@@ -293,13 +294,13 @@ async def _label_query(
         if verdict.verdict == VerdictEnum.RELEVANT
     ]
 
-    # If no docs passed the judge, keep the top-1 candidate (avoid empty ground truth)
-    if not relevant_docs and candidates:
-        relevant_docs = [candidates[0].path]
+    # If the judge found nothing, the query is unanswerable from this corpus.
+    # Mark it explicitly instead of forcing a synthetic top-1 doc.
+    answerable = bool(relevant_docs)
+    if not answerable:
         logger.warning(
-            "No relevant docs found for query %s, keeping top-1 candidate %s",
+            "No relevant docs found for query %s; marking unanswerable",
             query.id,
-            candidates[0].path,
         )
 
     return GroundTruthRecord(
@@ -307,6 +308,7 @@ async def _label_query(
         label=query.label if query.label else ClassificationLabel.UNKNOWN.value,
         query_text=query_text,
         relevant_docs=relevant_docs,
+        answerable=answerable,
         source=query.source,
         title=query.title,
         answer_text=query.answer_text,
@@ -323,6 +325,7 @@ async def _alabel_all(
     concurrency: int,
     dry_run: bool,
     out_path: Path,
+    limit: int = 0,
 ) -> list[GroundTruthRecord]:
     """Label all queries and append results to ``out_path`` as JSONL.
 
@@ -351,6 +354,10 @@ async def _alabel_all(
     out_path : Path
         Output file. Existing records are skipped on resume; a legacy
         JSON-array file is truncated before writing begins.
+    limit : int
+        Stop after this many queries in this run (0 = no limit). On resume,
+        the count applies to queries remaining after skipping already-labeled
+        query_ids, not to the total across all runs.
 
     Returns
     -------
@@ -361,8 +368,9 @@ async def _alabel_all(
     # Resume: collect query_ids already in the output file.
     done_ids: set[str] = set()
     text = ""
-    if out_path.exists():
-        text = out_path.read_text(encoding="utf-8").strip()
+    aout_path = AsyncPath(out_path)
+    if await aout_path.exists():
+        text = (await aout_path.read_text(encoding="utf-8")).strip()
     if text:
         if text.startswith("["):
             # Legacy format from a previous version of this script.
@@ -375,7 +383,7 @@ async def _alabel_all(
                     "Output file %s is in legacy JSON-array format; truncating",
                     out_path,
                 )
-                out_path.write_text("", encoding="utf-8")
+                await aout_path.write_text("", encoding="utf-8")
                 text = ""
             else:
                 logger.warning(
@@ -405,11 +413,14 @@ async def _alabel_all(
         logger.info("Nothing to label; all %d queries already done", len(queries))
         return []
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    await aout_path.parent.mkdir(parents=True, exist_ok=True)
     total = len(remaining)
     results: list[GroundTruthRecord] = []
 
     for i, query in enumerate(remaining, 1):
+        if limit and i > limit:
+            logger.info("Hit --limit %d, stopping", limit)
+            break
         logger.info("[%d/%d] Labeling query %s...", i, total, query.id)
         start = time.monotonic()
 
@@ -420,6 +431,7 @@ async def _alabel_all(
                 label=query.label if query.label else ClassificationLabel.UNKNOWN.value,
                 query_text=query_text,
                 relevant_docs=["(dry-run)"],
+                answerable=True,
                 source=query.source,
                 title=query.title,
                 answer_text=query.answer_text,
@@ -432,8 +444,10 @@ async def _alabel_all(
 
         if record is not None:
             # Append incrementally so a crash mid-run does not lose prior work.
-            with out_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(record.model_dump(), ensure_ascii=False) + "\n")
+            async with await aout_path.open("a", encoding="utf-8") as f:
+                await f.write(
+                    json.dumps(record.model_dump(), ensure_ascii=False) + "\n"
+                )
             results.append(record)
             elapsed = time.monotonic() - start
             logger.info(
@@ -466,6 +480,9 @@ def label(
     ),
     concurrency: int = typer.Option(
         _labeling.concurrency, help="Max parallel LLM judge calls."
+    ),
+    limit: int = typer.Option(
+        0, "--limit", help="Stop after N queries in this run (0 = no limit)."
     ),
     dry_run: bool = typer.Option(False, help="Skip LLM judge, use placeholder docs."),
     output: str = typer.Option(_labeling.ground_truth_output, help="Output JSON path."),
@@ -516,6 +533,7 @@ def label(
             concurrency,
             dry_run,
             out_path,
+            limit,
         )
     )
     elapsed: float = time.monotonic() - start

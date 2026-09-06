@@ -97,6 +97,7 @@ class QueryOutcome:
     latency_ms: float
     status: str
     error: str | None = None
+    answerable: bool = True
 
 
 @dataclass(slots=True)
@@ -109,6 +110,7 @@ class RunSummary:
     total: int
     completed: int
     failed: int
+    unanswerable: int = 0
     category_scores: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
@@ -206,6 +208,13 @@ class EvalRunner:
             }
             outcomes.extend(future.result() for future in as_completed(futures))
 
+        successful = [
+            outcome
+            for outcome in outcomes
+            if outcome.status == QueryResultStatus.SUCCESS.value
+        ]
+        # recall@k means are computed over answerable queries only; unanswerable
+        # queries are counted separately so they do not drag the mean to zero.
         scored = [
             ScoredQuery(
                 query_id=outcome.query_id,
@@ -213,19 +222,24 @@ class EvalRunner:
                 recall_at_k=outcome.recall_at_k or 0.0,
                 precision_at_k=outcome.precision_at_k or 0.0,
             )
-            for outcome in outcomes
-            if outcome.status == QueryResultStatus.SUCCESS.value
+            for outcome in successful
+            if outcome.answerable
         ]
         category_scores = aggregate_by_category(scored)
 
-        completed = len(scored)
+        unanswerable = sum(1 for record in self._ground_truth if not record.answerable)
+        completed = len(successful)
         failed = len(outcomes) - completed
         status = RunStatus.COMPLETE.value if failed == 0 else RunStatus.PARTIAL.value
         # Mark as completed
         self._store.finalize_run(run_id, status)
 
         logger.info(
-            "Run %d complete: %d/%d succeeded", run_id, completed, len(outcomes)
+            "Run %d complete: %d/%d succeeded (%d unanswerable)",
+            run_id,
+            completed,
+            len(outcomes),
+            unanswerable,
         )
         return RunSummary(
             run_id=run_id,
@@ -234,6 +248,7 @@ class EvalRunner:
             total=len(outcomes),
             completed=completed,
             failed=failed,
+            unanswerable=unanswerable,
             category_scores=category_scores,
         )
 
@@ -300,6 +315,7 @@ class EvalRunner:
                     latency_ms=latency_ms,
                     status=status,
                     error=str(exc),
+                    answerable=record.answerable,
                 )
             latency_ms = (time.monotonic() - start) * 1000.0
             retrieved_paths = [doc for doc, _ in result.documents[: self._k]]
@@ -325,5 +341,6 @@ class EvalRunner:
                 precision_at_k=precision,
                 latency_ms=latency_ms,
                 status=QueryResultStatus.SUCCESS.value,
+                answerable=record.answerable,
             )
         raise RuntimeError("Unreachable: retry loop exhausted without returning")

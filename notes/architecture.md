@@ -151,7 +151,7 @@ Difficulty categories:
 
 ### 3.3 Ground Truth Schema
 
-Format: JSON array, one object per query.
+Format: JSONL, one compact object per line (incremental writes + resume).
 
 ```json
 {
@@ -162,6 +162,7 @@ Format: JSON array, one object per query.
     "docs/en/docs/tutorial/request-forms.md",
     "docs/en/docs/tutorial/body.md"
   ],
+  "answerable": true,
   "source": "github | stackoverflow",
   "title": "<human-readable title of the original question>",
   "answer_text": "<reference answer, not used by retrieval eval>",
@@ -174,11 +175,21 @@ Format: JSON array, one object per query.
 | `query_id` | ✅ | Unique, matches original GitHub/SO discussion/answer ID |
 | `label` | ✅ | Difficulty category; drives per-category breakdown in `diff` |
 | `query_text` | ✅ | What the harness passes to `adapter.retrieve()` |
-| `relevant_docs` | ✅ | List of file paths to FastAPI documentation pages that answer this query |
+| `relevant_docs` | ✅ | List of file paths to FastAPI documentation pages that answer this query; **empty when `answerable` is false** |
+| `answerable` | ✅ | Whether any corpus doc answers the query. `true` requires ≥1 `relevant_docs`; `false` requires empty list (enforced by schema validator) |
 | `source` | ❌ | Origin of the question (`github` or `stackoverflow`) |
 | `title` | ❌ | Human-readable, aids manual review during labeling |
 | `answer_text` | ❌ | Reference answer; context for labeling, not used in retrieval eval |
 | `url` | ❌ | Link to original source |
+
+**Unanswerable queries:** Real user questions are not always answerable from the
+corpus (bug reports, regressions, version-specific issues). When the LLM judge
+finds no relevant doc among the top-k candidates, the record is written with
+`answerable: false` and `relevant_docs: []` instead of a synthetic fallback doc.
+The harness computes recall@k means over answerable queries only and reports the
+unanswerable count separately in `RunSummary`. A future generation-eval can use
+these queries to test abstention (the system should say "not in my knowledge
+base" instead of hallucinating).
 
 **Labeling assumption:** Sparse binary relevance. Any doc not listed in
 `relevant_docs` is treated as irrelevant. This is the standard IR pooling

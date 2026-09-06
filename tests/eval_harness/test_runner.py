@@ -351,6 +351,92 @@ class TestEvalRunner:
         results = store.get_results(summary.run_id)
         assert len(results) == 3
 
+    def test_unanswerable_excluded_from_scores(self, tmp_path) -> None:
+        """Given unanswerable records, then they are counted but excluded from means."""
+        # Given
+        records = [
+            GroundTruthRecord(
+                query_id="q1",
+                label="DIRECT_LOOKUP",
+                query_text="Question 1",
+                relevant_docs=["doc1.md"],
+            ),
+            GroundTruthRecord(
+                query_id="q2",
+                label="MULTI_HOP",
+                query_text="Question 2",
+                relevant_docs=[],
+                answerable=False,
+            ),
+        ]
+        store = ResultStore(tmp_path / "test.db")
+        adapter = StubAdapter()
+        runner = EvalRunner(adapter, store, records, k=1, concurrency=1, max_retries=0)
+
+        # When
+        summary = runner.run("unanswerable-run")
+
+        # Then
+        assert summary.total == 2
+        assert summary.completed == 2
+        assert summary.unanswerable == 1
+        # Only the answerable query contributes to the OVERALL mean.
+        overall = summary.category_scores["OVERALL"]
+        assert overall["count"] == 1.0
+
+    def test_all_unanswerable_returns_zero_scores(self, tmp_path) -> None:
+        """Given only unanswerable records, then OVERALL scores are zero with count 0."""
+        # Given
+        records = [
+            GroundTruthRecord(
+                query_id=f"q{i}",
+                label="DIRECT_LOOKUP",
+                query_text=f"Question {i}",
+                relevant_docs=[],
+                answerable=False,
+            )
+            for i in range(2)
+        ]
+        store = ResultStore(tmp_path / "test.db")
+        adapter = StubAdapter()
+        runner = EvalRunner(adapter, store, records, k=1, concurrency=1, max_retries=0)
+
+        # When
+        summary = runner.run("all-unanswerable")
+
+        # Then
+        assert summary.total == 2
+        assert summary.completed == 2
+        assert summary.unanswerable == 2
+        overall = summary.category_scores["OVERALL"]
+        assert overall["count"] == 0.0
+        assert overall["recall"] == 0.0
+        assert overall["precision"] == 0.0
+
+    def test_unanswerable_failure_counts_both_failed_and_unanswerable(
+        self, tmp_path
+    ) -> None:
+        """Given an unanswerable record that fails, then it counts in both buckets."""
+        # Given
+        record = GroundTruthRecord(
+            query_id="q1",
+            label="MULTI_HOP",
+            query_text="Question 1",
+            relevant_docs=[],
+            answerable=False,
+        )
+        store = ResultStore(tmp_path / "test.db")
+        adapter = FailingAdapter(ValueError("bad input"))
+        runner = EvalRunner(adapter, store, [record], k=1, concurrency=1, max_retries=0)
+
+        # When
+        summary = runner.run("fail-unanswerable")
+
+        # Then
+        assert summary.failed == 1
+        assert summary.unanswerable == 1
+        assert summary.completed == 0
+
 
 class StubAdapter:
     """Minimal adapter that returns deterministic results for testing."""

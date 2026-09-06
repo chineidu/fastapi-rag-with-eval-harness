@@ -83,13 +83,34 @@ class TestGroundTruthRecord:
                 relevant_docs=["a.md"],
             )
 
-    def test_empty_relevant_docs_rejected(self) -> None:
+    def test_empty_relevant_docs_with_answerable_rejected(self) -> None:
         with pytest.raises(ValidationError):
             GroundTruthRecord(
                 query_id="Q1",
                 label="DIRECT_LOOKUP",
                 query_text="q",
                 relevant_docs=[],
+            )
+
+    def test_unanswerable_allows_empty_relevant_docs(self) -> None:
+        r = GroundTruthRecord(
+            query_id="Q1",
+            label="DIRECT_LOOKUP",
+            query_text="q",
+            relevant_docs=[],
+            answerable=False,
+        )
+        assert r.answerable is False
+        assert r.relevant_docs == []
+
+    def test_unanswerable_with_docs_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            GroundTruthRecord(
+                query_id="Q1",
+                label="DIRECT_LOOKUP",
+                query_text="q",
+                relevant_docs=["a.md"],
+                answerable=False,
             )
 
 
@@ -326,8 +347,9 @@ class TestLabelQuery:
             )
 
         assert result is not None
-        # Should keep top-1 as fallback
-        assert len(result.relevant_docs) == 1
+        # No relevant docs found -> marked unanswerable, no synthetic fallback
+        assert result.answerable is False
+        assert result.relevant_docs == []
 
 
 def _make_query(qid: str) -> UnifiedEvalRecordSchema:
@@ -569,3 +591,85 @@ class TestAlabelAll:
         assert len(lines) == 3
         parsed = [json.loads(ln) for ln in lines]
         assert [p["query_id"] for p in parsed] == ["Q0", "Q1", "Q2"]
+
+    @pytest.mark.asyncio
+    async def test_limit_stops_after_n_remaining(
+        self, label_ground_truth, tmp_path
+    ) -> None:
+        """Given a limit, then only the first N remaining queries are processed."""
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        embedder = StubEmbedder(dim=8)
+        queries = [_make_query(f"Q{i}") for i in range(3)]
+        processed: list[str] = []
+
+        async def fake_label_query(
+            query: UnifiedEvalRecordSchema, *args: object, **kwargs: object
+        ) -> GroundTruthRecord:
+            processed.append(query.id)
+            return _make_gt_record(query.id)
+
+        # When
+        with patch.object(mod, "_label_query", side_effect=fake_label_query):
+            results = await mod._alabel_all(
+                queries,
+                [CorpusDocument(path="a.md", content="x")],
+                np.array([[0.0] * 8], dtype=np.float32),
+                embedder,
+                top_k=1,
+                concurrency=1,
+                dry_run=False,
+                out_path=out_path,
+                limit=2,
+            )
+
+        # Then
+        assert processed == ["Q0", "Q1"]
+        assert [r.query_id for r in results] == ["Q0", "Q1"]
+        lines = [
+            ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+        ]
+        assert len(lines) == 2
+        assert {json.loads(ln)["query_id"] for ln in lines} == {"Q0", "Q1"}
+
+    @pytest.mark.asyncio
+    async def test_limit_applies_to_remaining_after_resume(
+        self, label_ground_truth, tmp_path
+    ) -> None:
+        """Given a resume with a limit, then the limit counts only remaining queries."""
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        out_path.write_text(
+            json.dumps(_make_gt_record("Q0").model_dump()) + "\n",
+            encoding="utf-8",
+        )
+        embedder = StubEmbedder(dim=8)
+        queries = [_make_query(qid) for qid in ("Q0", "Q1", "Q2", "Q3")]
+        processed: list[str] = []
+
+        async def fake_label_query(
+            query: UnifiedEvalRecordSchema, *args: object, **kwargs: object
+        ) -> GroundTruthRecord:
+            processed.append(query.id)
+            return _make_gt_record(query.id)
+
+        # When
+        with patch.object(mod, "_label_query", side_effect=fake_label_query):
+            results = await mod._alabel_all(
+                queries,
+                [CorpusDocument(path="a.md", content="x")],
+                np.array([[0.0] * 8], dtype=np.float32),
+                embedder,
+                top_k=1,
+                concurrency=1,
+                dry_run=False,
+                out_path=out_path,
+                limit=2,
+            )
+
+        # Then
+        # Q0 skipped (already done); limit 2 covers Q1 and Q2 only.
+        assert processed == ["Q1", "Q2"]
+        assert [r.query_id for r in results] == ["Q1", "Q2"]
