@@ -3,7 +3,7 @@
 Loads queries from ``data/eval_dataset.jsonl``, embeds the corpus, performs
 semantic search to find top-30 candidate documents per query, then uses an
 LLM judge to determine which candidates are relevant.  Results are written
-to ``data/ground_truth.json``.
+to ``data/ground_truth.jsonl``.
 
 Usage:
     uv run python -m scripts.label_ground_truth label
@@ -304,7 +304,7 @@ async def _label_query(
 
     return GroundTruthRecord(
         query_id=query.id,
-        label=query.label.value if query.label else ClassificationLabel.UNKNOWN,
+        label=query.label if query.label else ClassificationLabel.UNKNOWN.value,
         query_text=query_text,
         relevant_docs=relevant_docs,
         source=query.source,
@@ -322,12 +322,94 @@ async def _alabel_all(
     top_k: int,
     concurrency: int,
     dry_run: bool,
+    out_path: Path,
 ) -> list[GroundTruthRecord]:
-    """Label all queries and return ground truth records."""
-    results: list[GroundTruthRecord] = []
-    total = len(queries)
+    """Label all queries and append results to ``out_path`` as JSONL.
 
-    for i, query in enumerate(queries, 1):
+    Records are appended one per line after each query completes, so a crash
+    mid-run loses at most the query that was in flight. On startup, any
+    ``query_id`` already present in the file is skipped — a crashed run can
+    be resumed by re-invoking the script with the same ``out_path``. A legacy
+    JSON-array file (the previous output format) is detected and truncated.
+
+    Parameters
+    ----------
+    queries : list[UnifiedEvalRecordSchema]
+        Queries to label.
+    corpus_docs : list[CorpusDocument]
+        Loaded corpus.
+    corpus_vectors : np.ndarray
+        Pre-computed corpus embeddings.
+    embedder : AbstractEmbedder
+        Embedder used for query vectors.
+    top_k : int
+        Number of candidates per query.
+    concurrency : int
+        Max parallel LLM judge calls per query.
+    dry_run : bool
+        If True, skip the LLM judge and emit placeholder ``relevant_docs``.
+    out_path : Path
+        Output file. Existing records are skipped on resume; a legacy
+        JSON-array file is truncated before writing begins.
+
+    Returns
+    -------
+    list[GroundTruthRecord]
+        Records newly written in this run, in input order.
+
+    """
+    # Resume: collect query_ids already in the output file.
+    done_ids: set[str] = set()
+    text = ""
+    if out_path.exists():
+        text = out_path.read_text(encoding="utf-8").strip()
+    if text:
+        if text.startswith("["):
+            # Legacy format from a previous version of this script.
+            try:
+                legacy = json.loads(text)
+            except json.JSONDecodeError:
+                legacy = None
+            if isinstance(legacy, list):
+                logger.warning(
+                    "Output file %s is in legacy JSON-array format; truncating",
+                    out_path,
+                )
+                out_path.write_text("", encoding="utf-8")
+                text = ""
+            else:
+                logger.warning(
+                    "Output file %s starts with '[' but is not a JSON array; ignoring",
+                    out_path,
+                )
+        if text:
+            for line_no, line in enumerate(text.splitlines(), start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    done_ids.add(json.loads(stripped)["query_id"])
+                except json.JSONDecodeError, KeyError, TypeError:
+                    logger.warning(
+                        "Skipping malformed line %d in %s", line_no, out_path
+                    )
+    if done_ids:
+        logger.info(
+            "Resuming: %d queries already labeled in %s",
+            len(done_ids),
+            out_path,
+        )
+
+    remaining = [q for q in queries if q.id not in done_ids]
+    if not remaining:
+        logger.info("Nothing to label; all %d queries already done", len(queries))
+        return []
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    total = len(remaining)
+    results: list[GroundTruthRecord] = []
+
+    for i, query in enumerate(remaining, 1):
         logger.info("[%d/%d] Labeling query %s...", i, total, query.id)
         start = time.monotonic()
 
@@ -335,7 +417,7 @@ async def _alabel_all(
             query_text = clean_query_text(query.body, query.source, query.title)
             record = GroundTruthRecord(
                 query_id=query.id,
-                label=query.label.value if query.label else ClassificationLabel.UNKNOWN,
+                label=query.label if query.label else ClassificationLabel.UNKNOWN.value,
                 query_text=query_text,
                 relevant_docs=["(dry-run)"],
                 source=query.source,
@@ -349,6 +431,9 @@ async def _alabel_all(
             )
 
         if record is not None:
+            # Append incrementally so a crash mid-run does not lose prior work.
+            with out_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record.model_dump(), ensure_ascii=False) + "\n")
             results.append(record)
             elapsed = time.monotonic() - start
             logger.info(
@@ -419,29 +504,42 @@ def label(
     corpus_vectors = _load_or_embed_corpus(corpus_docs, embedder, emb_cache)
     logger.info("Corpus embeddings shape: %s", corpus_vectors.shape)
 
-    # 4. Label all queries
+    # 4. Label all queries (writes incrementally to out_path as JSONL)
     start: float = time.monotonic()
-    results: list[GroundTruthRecord] = asyncio.run(
+    asyncio.run(
         _alabel_all(
-            queries, corpus_docs, corpus_vectors, embedder, top_k, concurrency, dry_run
+            queries,
+            corpus_docs,
+            corpus_vectors,
+            embedder,
+            top_k,
+            concurrency,
+            dry_run,
+            out_path,
         )
     )
     elapsed: float = time.monotonic() - start
 
-    # 5. Write output
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        json.dumps([r.model_dump() for r in results], indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    # 5. Summary: read back the full file so the totals reflect resume state.
+    all_records: list[dict[str, object]] = []
+    if out_path.exists():
+        for line in out_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("["):
+                continue
+            try:
+                all_records.append(json.loads(stripped))
+            except json.JSONDecodeError:
+                continue
 
-    # Summary
-    categories: dict[str, int] = {}  # {label: count}
-    for r in results:
-        categories[r.label] = categories.get(r.label, 0) + 1
+    categories: dict[str, int] = {}
+    for record in all_records:
+        label = record.get("label")
+        if isinstance(label, str):
+            categories[label] = categories.get(label, 0) + 1
 
     logger.info(
-        "Wrote %d ground truth records to %s (%.1fs)", len(results), out_path, elapsed
+        "Ground truth file has %d records (%.1fs total)", len(all_records), elapsed
     )
     for cat, count in sorted(categories.items()):
         logger.info("  %s: %d", cat, count)

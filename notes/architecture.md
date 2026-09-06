@@ -51,7 +51,7 @@ evaluating trade-offs when modifying a RAG pipeline.
 LABELING (one-time)                    EVAL (every run)
 ==================                     ===============
 
-  70 queries                            ground_truth.json
+  70 queries                            ground_truth.jsonl
      │                                         │
   615 docs                                     │
      │                                         │
@@ -77,13 +77,13 @@ LABELING (one-time)                    EVAL (every run)
   per query
      │
      ▼
-  ground_truth.json ────► same file, read every run
+  ground_truth.jsonl ────► same file, read every run
 ```
 
 The harness evaluates retrieval quality through two pipelines. **Labeling**
 (left) is a one-time step: an LLM judges whether each candidate doc is relevant
 to a query, using the reference answer as context.
-The result is a static `ground_truth.json` file listing relevant docs per query.
+The result is a static `ground_truth.jsonl` file listing relevant docs per query.
 
 **Eval** (right) runs
 every time you change the pipeline: the adapter retrieves docs for each query,
@@ -472,7 +472,7 @@ committed).
 ```yaml
 # .rag-eval.yaml
 adapter: myproject.adapter:LocalRetriever
-ground_truth: data/ground_truth.json
+ground_truth: data/ground_truth.jsonl
 db: data/.rag-eval/runs.db
 
 defaults:
@@ -514,6 +514,9 @@ precision@k = |retrieved ∩ relevant| / k
 ```
 
 "Of the top k results, how many were actually relevant?"
+
+Example: relevant docs = {A, B, C} (3 total), retrieved top-5 = [B, X, A, Y, Z].
+precision@5 = 2/5 = 0.40
 
 ### 5.3 Aggregation
 
@@ -565,7 +568,7 @@ fastapi-rag-with-eval-harness/
 │   ├── eval_dataset.jsonl             # 70 unlabeled queries
 │   ├── fastapi_discussions.jsonl      # Raw GitHub discussions
 │   ├── fastapi_stackoverflow.jsonl    # Raw StackOverflow Q&As
-│   ├── ground_truth.json             # Enriched ground truth (to be created)
+│   ├── ground_truth.jsonl             # Enriched ground truth (to be created)
 │   └── .rag-eval/                     # (gitignored)
 │       └── runs.db                    # SQLite run history
 ├── docs/

@@ -1,11 +1,13 @@
 """Tests for the ground-truth labeling pipeline (scripts/label_ground_truth.py)."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from src.embeddings import StubEmbedder
 from src.schemas.ground_truth import CorpusDocument, LabelVerdict
 from src.schemas.models import GroundTruthRecord
 from src.schemas.output import UnifiedEvalRecordSchema
@@ -326,3 +328,244 @@ class TestLabelQuery:
         assert result is not None
         # Should keep top-1 as fallback
         assert len(result.relevant_docs) == 1
+
+
+def _make_query(qid: str) -> UnifiedEvalRecordSchema:
+    """Build a minimal UnifiedEvalRecordSchema for resume tests."""
+    return UnifiedEvalRecordSchema(
+        id=qid,
+        source="github",
+        title=f"Question {qid}",
+        url=f"https://example.com/{qid}",
+        body=f"body {qid}",
+        answer_text="ans",
+        created_at="2024-01-01T00:00:00Z",
+        score=1,
+        answer_score=1,
+        tags=["q"],
+        label=None,
+    )
+
+
+def _make_gt_record(qid: str) -> GroundTruthRecord:
+    """Build a minimal GroundTruthRecord for resume fixtures."""
+    return GroundTruthRecord(
+        query_id=qid,
+        label="DIRECT_LOOKUP",
+        query_text=f"body {qid}",
+        relevant_docs=["a.md"],
+    )
+
+
+class TestAlabelAll:
+    @pytest.mark.asyncio
+    async def test_resume_skips_done_ids(self, label_ground_truth, tmp_path) -> None:
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        out_path.write_text(
+            json.dumps(_make_gt_record("Q0").model_dump()) + "\n",
+            encoding="utf-8",
+        )
+        queries = [_make_query(qid) for qid in ("Q0", "Q1", "Q2")]
+        embedder = StubEmbedder(dim=8)
+        corpus_docs = [CorpusDocument(path="a.md", content="x")]
+        corpus_vectors = np.array([[0.0] * 8], dtype=np.float32)
+
+        processed: list[str] = []
+
+        async def fake_label_query(
+            query: UnifiedEvalRecordSchema, *args: object, **kwargs: object
+        ) -> GroundTruthRecord:
+            processed.append(query.id)
+            return _make_gt_record(query.id)
+
+        # When
+        with patch.object(mod, "_label_query", side_effect=fake_label_query):
+            results = await mod._alabel_all(
+                queries,
+                corpus_docs,
+                corpus_vectors,
+                embedder,
+                top_k=1,
+                concurrency=2,
+                dry_run=False,
+                out_path=out_path,
+            )
+
+        # Then
+        assert processed == ["Q1", "Q2"]
+        assert [r.query_id for r in results] == ["Q1", "Q2"]
+        lines = [
+            ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+        ]
+        assert len(lines) == 3
+        assert {json.loads(ln)["query_id"] for ln in lines} == {"Q0", "Q1", "Q2"}
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_all_done(
+        self, label_ground_truth, tmp_path
+    ) -> None:
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        out_path.write_text(
+            json.dumps(_make_gt_record("Q0").model_dump()) + "\n",
+            encoding="utf-8",
+        )
+        embedder = StubEmbedder(dim=8)
+
+        # When
+        results = await mod._alabel_all(
+            [_make_query("Q0")],
+            [CorpusDocument(path="a.md", content="x")],
+            np.array([[0.0] * 8], dtype=np.float32),
+            embedder,
+            top_k=1,
+            concurrency=1,
+            dry_run=False,
+            out_path=out_path,
+        )
+
+        # Then
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_truncates_legacy_json_array(
+        self, label_ground_truth, tmp_path
+    ) -> None:
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        legacy = json.dumps([_make_gt_record("Q0").model_dump()])
+        out_path.write_text(legacy, encoding="utf-8")
+        embedder = StubEmbedder(dim=8)
+
+        async def fake_label_query(
+            query: UnifiedEvalRecordSchema, *args: object, **kwargs: object
+        ) -> GroundTruthRecord:
+            return _make_gt_record(query.id)
+
+        # When
+        with patch.object(mod, "_label_query", side_effect=fake_label_query):
+            results = await mod._alabel_all(
+                [_make_query("Q1")],
+                [CorpusDocument(path="a.md", content="x")],
+                np.array([[0.0] * 8], dtype=np.float32),
+                embedder,
+                top_k=1,
+                concurrency=1,
+                dry_run=False,
+                out_path=out_path,
+            )
+
+        # Then
+        assert [r.query_id for r in results] == ["Q1"]
+        content = out_path.read_text(encoding="utf-8").strip()
+        assert not content.startswith("[")
+        lines = [ln for ln in content.splitlines() if ln.strip()]
+        assert len(lines) == 1
+        assert json.loads(lines[0])["query_id"] == "Q1"
+
+    @pytest.mark.asyncio
+    async def test_skips_malformed_lines(self, label_ground_truth, tmp_path) -> None:
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        valid = json.dumps(_make_gt_record("Q0").model_dump())
+        out_path.write_text(f"{valid}\nthis is not valid json\n", encoding="utf-8")
+        embedder = StubEmbedder(dim=8)
+
+        processed: list[str] = []
+
+        async def fake_label_query(
+            query: UnifiedEvalRecordSchema, *args: object, **kwargs: object
+        ) -> GroundTruthRecord:
+            processed.append(query.id)
+            return _make_gt_record(query.id)
+
+        # When
+        with patch.object(mod, "_label_query", side_effect=fake_label_query):
+            await mod._alabel_all(
+                [_make_query("Q0"), _make_query("Q1")],
+                [CorpusDocument(path="a.md", content="x")],
+                np.array([[0.0] * 8], dtype=np.float32),
+                embedder,
+                top_k=1,
+                concurrency=1,
+                dry_run=False,
+                out_path=out_path,
+            )
+
+        # Then
+        assert processed == ["Q1"]
+
+    @pytest.mark.asyncio
+    async def test_dry_run_emits_placeholder_without_judge(
+        self, label_ground_truth, tmp_path
+    ) -> None:
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        embedder = StubEmbedder(dim=8)
+
+        # When
+        with patch.object(mod, "_label_query") as mock_label:
+            results = await mod._alabel_all(
+                [_make_query("Q1")],
+                [CorpusDocument(path="a.md", content="x")],
+                np.array([[0.0] * 8], dtype=np.float32),
+                embedder,
+                top_k=1,
+                concurrency=1,
+                dry_run=True,
+                out_path=out_path,
+            )
+
+        # Then
+        mock_label.assert_not_called()
+        assert len(results) == 1
+        assert results[0].query_id == "Q1"
+        assert results[0].relevant_docs == ["(dry-run)"]
+        lines = [
+            ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+        ]
+        assert len(lines) == 1
+        assert json.loads(lines[0])["relevant_docs"] == ["(dry-run)"]
+
+    @pytest.mark.asyncio
+    async def test_incremental_writes_one_record_per_query(
+        self, label_ground_truth, tmp_path
+    ) -> None:
+        # Given
+        mod = label_ground_truth
+        out_path = tmp_path / "gt.jsonl"
+        embedder = StubEmbedder(dim=8)
+        queries = [_make_query(f"Q{i}") for i in range(3)]
+
+        async def fake_label_query(
+            query: UnifiedEvalRecordSchema, *args: object, **kwargs: object
+        ) -> GroundTruthRecord:
+            return _make_gt_record(query.id)
+
+        # When
+        with patch.object(mod, "_label_query", side_effect=fake_label_query):
+            results = await mod._alabel_all(
+                queries,
+                [CorpusDocument(path="a.md", content="x")],
+                np.array([[0.0] * 8], dtype=np.float32),
+                embedder,
+                top_k=1,
+                concurrency=1,
+                dry_run=False,
+                out_path=out_path,
+            )
+
+        # Then
+        assert [r.query_id for r in results] == ["Q0", "Q1", "Q2"]
+        lines = [
+            ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+        ]
+        assert len(lines) == 3
+        parsed = [json.loads(ln) for ln in lines]
+        assert [p["query_id"] for p in parsed] == ["Q0", "Q1", "Q2"]

@@ -1,6 +1,6 @@
 # Harness config (committed). CLI flags override these values.
 adapter: "app.adapter:Retriever"
-ground_truth: data/ground_truth.json
+ground_truth: data/ground_truth.jsonl
 db: data/.rag-eval/runs.db
 
 defaults:

@@ -225,8 +225,8 @@ class LabelingConfig:
         metadata={"description": "Root directory for Python corpus files."},
     )
     ground_truth_output: str = field(
-        default="data/ground_truth.json",
-        metadata={"description": "Output path for ground truth JSON."},
+        default="data/ground_truth.jsonl",
+        metadata={"description": "Output path for ground truth JSONL."},
     )
     top_k: int = field(
         default=30,

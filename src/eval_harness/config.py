@@ -7,7 +7,7 @@ from typing import Any
 from omegaconf import OmegaConf
 
 DEFAULT_DB = "data/.rag-eval/runs.db"
-DEFAULT_GROUND_TRUTH = "data/ground_truth.json"
+DEFAULT_GROUND_TRUTH = "data/ground_truth.jsonl"
 DEFAULT_CONFIG_PATH = Path(".rag-eval.yaml")
 
 

@@ -73,7 +73,7 @@ class TestHarnessConfig:
 
         # Then
         assert cfg.adapter == ""
-        assert cfg.ground_truth == "data/ground_truth.json"
+        assert cfg.ground_truth == "data/ground_truth.jsonl"
         assert cfg.db == "data/.rag-eval/runs.db"
         assert isinstance(cfg.defaults, HarnessDefaults)
         assert isinstance(cfg.diff, HarnessDiffThresholds)

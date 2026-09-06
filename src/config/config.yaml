@@ -52,7 +52,7 @@ config:
     labeling:
       corpus_md_root: "docs/fastapi/docs/en/docs"
       corpus_py_root: "docs/fastapi/docs_src"
-      ground_truth_output: "data/ground_truth.json"
+      ground_truth_output: "data/ground_truth.jsonl"
       top_k: 30
       concurrency: 3
       max_content_length: 2000
