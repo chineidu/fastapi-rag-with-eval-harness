@@ -11,6 +11,7 @@ help:
 	@echo "  make format       - Format code (ruff)"
 	@echo "  make typecheck    - Run type checker (ty)"
 	@echo "  make check        - Run all checks (lint + typecheck + test)"
+	@echo "  make fetch-data   - Fetch raw eval data (GitHub + Stack Overflow)"
 	@echo "  make clean-cache  - Clean up cache and temporary files"
 
 .PHONY: install
@@ -52,6 +53,12 @@ typecheck:
 .PHONY: check
 check: lint typecheck test
 	@echo "All checks passed."
+
+.PHONY: fetch-data
+fetch-data:
+	@echo "Fetching eval data..."
+	uv run -m scripts.fetch_eval_data github
+	uv run -m scripts.fetch_eval_data stackoverflow
 
 .PHONY: clean-cache
 clean-cache:

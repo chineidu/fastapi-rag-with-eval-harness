@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
+# cmd_name = "module_name:function"
 rag-eval = "src.eval_harness.cli:main"
 
 [build-system]
