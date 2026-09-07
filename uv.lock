@@ -320,7 +320,7 @@ standard-no-fastapi-cloud-cli = [
 [[package]]
 name = "fastapi-rag-with-eval-harness"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
     { name = "fastembed" },
@@ -329,6 +329,7 @@ dependencies = [
     { name = "omegaconf" },
     { name = "pydantic-settings" },
     { name = "python-json-logger" },
+    { name = "typer" },
 ]
 
 [package.dev-dependencies]
@@ -350,6 +351,7 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.1" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "python-json-logger", specifier = ">=4.1.0" },
+    { name = "typer", specifier = ">=0.27.0" },
 ]
 
 [package.metadata.requires-dev]

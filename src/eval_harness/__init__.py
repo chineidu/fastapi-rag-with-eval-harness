@@ -1,23 +1,27 @@
 """Copyable retrieval-eval harness: runner, metrics engine, CLI, and SQLite store."""
 
-from src.eval_harness.adapter import RetrievalResult, RetrieverAdapter
-from src.eval_harness.config import (
-    HarnessConfig,
-    HarnessDefaults,
-    HarnessDiffThresholds,
-    apply_cli_overrides,
-    load_harness_config,
-)
+from src.eval_harness.adapter import RetrieverAdapter
+from src.eval_harness.config import apply_cli_overrides, load_harness_config
 from src.eval_harness.loader import GroundTruthLoader
 from src.eval_harness.metrics import (
     OVERALL_CATEGORY,
-    ScoredQuery,
     aggregate_by_category,
     precision_at_k,
     recall_at_k,
 )
-from src.eval_harness.runner import EvalRunner, QueryOutcome, RunSummary
+from src.eval_harness.runner import EvalRunner
 from src.eval_harness.store import QueryResultStatus, ResultStore, RunStatus
+from src.schemas.containers import (
+    HarnessConfig,
+    HarnessDefaults,
+    HarnessDiffThresholds,
+)
+from src.schemas.harness import (
+    QueryOutcome,
+    RetrievalResult,
+    RunSummary,
+    ScoredQuery,
+)
 from src.schemas.models import GroundTruthRecord
 
 __all__ = [

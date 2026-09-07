@@ -27,7 +27,11 @@
 - [x] B4 `store.py` — `ResultStore` SQLite CRUD (schema §4.4; tests use `tmp_path`)
 - [x] B5 `config.py` — `HarnessConfig` (OmegaConf), `.rag-eval.yaml` loader
 - [x] B6 `runner.py` — `EvalRunner` (ThreadPool, timing, recoverable/fatal handling)
-- [ ] B7 `cli.py` — `rag-eval run|diff|list`, exit codes 0/1/2, `[project.scripts]` (**`diff` must exclude unanswerable queries from means, like `runner.py` does — they sit at recall 0.0 in the store and would show phantom regressions**)
+- [x] B7 `cli.py` — `rag-eval run|diff|list`, exit codes 0/1/2, `[project.scripts]` (**`diff` must exclude unanswerable queries from means, like `runner.py` does — they sit at recall 0.0 in the store and would show phantom regressions**)
+  - typer CLI in `src/eval_harness/cli.py`; `diff` excludes rows with empty `ground_truth` JSON (the unanswerable marker), matching runner semantics
+  - `[project.scripts]` wired via hatchling `[build-system]` (`packages = ["src"]`); `uv run rag-eval` works (`python -m src.eval_harness.cli` also works)
+  - added `--config` flag (not in architecture.md) to point at an explicit `.rag-eval.yaml`; `run` exits 1 on partial runs
+  - typer added as explicit dependency via `uv add typer` (was transitive via fastapi[standard])
 - [x] B8 `.rag-eval.yaml` committed (tracked)
 - [ ] B9 acceptance: dummy run → SQLite; `diff` two runs; commit (blocked on B7)
 

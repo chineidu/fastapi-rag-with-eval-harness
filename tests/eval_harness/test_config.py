@@ -3,12 +3,14 @@
 import pytest
 
 from src.eval_harness.config import (
-    HarnessConfig,
-    HarnessDefaults,
-    HarnessDiffThresholds,
     _from_dict,
     apply_cli_overrides,
     load_harness_config,
+)
+from src.schemas.containers import (
+    HarnessConfig,
+    HarnessDefaults,
+    HarnessDiffThresholds,
 )
 
 
@@ -192,6 +194,24 @@ class TestApplyCliOverrides:
 
         # Then
         assert result.defaults.k == 25
+
+    def test_invalid_k_override_raises(self) -> None:
+        """Given k=0 override, then ValueError is raised."""
+        # Given
+        cfg = HarnessConfig()
+
+        # When / Then
+        with pytest.raises(ValueError, match="k must be positive"):
+            apply_cli_overrides(cfg, k=0)
+
+    def test_negative_threshold_override_raises(self) -> None:
+        """Given negative threshold override, then ValueError is raised."""
+        # Given
+        cfg = HarnessConfig()
+
+        # When / Then
+        with pytest.raises(ValueError, match="threshold_absolute must not be negative"):
+            apply_cli_overrides(cfg, threshold_absolute=-0.1)
 
     def test_concurrency_override(self) -> None:
         """Given concurrency override, then it replaces the config value."""

@@ -1,19 +1,10 @@
 """Pure retrieval metrics: recall@k, precision@k, and per-category aggregation."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+
+from src.schemas.harness import ScoredQuery
 
 OVERALL_CATEGORY = "OVERALL"
-
-
-@dataclass(slots=True, frozen=True)
-class ScoredQuery:
-    """Per-query metric values used as input to aggregation."""
-
-    query_id: str
-    category: str
-    recall_at_k: float
-    precision_at_k: float
 
 
 def recall_at_k(

@@ -2,15 +2,13 @@
 
 import pytest
 
-from src.eval_harness.adapter import RetrievalResult
 from src.eval_harness.runner import (
     EvalRunner,
-    QueryOutcome,
-    RunSummary,
     is_recoverable,
     validate_result,
 )
 from src.eval_harness.store import ResultStore
+from src.schemas.harness import QueryOutcome, RetrievalResult, RunSummary
 from src.schemas.models import GroundTruthRecord
 
 RECORD = GroundTruthRecord(

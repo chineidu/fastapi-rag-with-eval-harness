@@ -4,18 +4,22 @@ import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures._base import Future
-from dataclasses import dataclass, field
 from typing import Any
 
 from src import create_logger
-from src.eval_harness.adapter import RetrievalResult, RetrieverAdapter
+from src.eval_harness.adapter import RetrieverAdapter
 from src.eval_harness.metrics import (
-    ScoredQuery,
     aggregate_by_category,
     precision_at_k,
     recall_at_k,
 )
 from src.eval_harness.store import QueryResultStatus, ResultStore, RunStatus
+from src.schemas.harness import (
+    QueryOutcome,
+    RetrievalResult,
+    RunSummary,
+    ScoredQuery,
+)
 from src.schemas.models import GroundTruthRecord
 
 logger = create_logger(name=__name__)
@@ -83,35 +87,6 @@ def validate_result(result: object) -> RetrievalResult:
         ):
             raise ValueError(f"Malformed retrieved document entry: {entry!r}")
     return result
-
-
-@dataclass(slots=True)
-class QueryOutcome:
-    """Per-query outcome of a single eval run."""
-
-    query_id: str
-    category: str
-    retrieved_docs: list[tuple[str, float]]
-    recall_at_k: float | None
-    precision_at_k: float | None
-    latency_ms: float
-    status: str
-    error: str | None = None
-    answerable: bool = True
-
-
-@dataclass(slots=True)
-class RunSummary:
-    """Aggregate outcome of :meth:`EvalRunner.run`."""
-
-    run_id: int
-    tag: str
-    status: str
-    total: int
-    completed: int
-    failed: int
-    unanswerable: int = 0
-    category_scores: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 class EvalRunner:

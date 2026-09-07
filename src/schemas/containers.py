@@ -266,3 +266,34 @@ class EvalPipelineConfig:
         default_factory=LabelingConfig,
         metadata={"description": "Ground-truth labeling pipeline settings."},
     )
+
+
+DEFAULT_DB = "data/.rag-eval/runs.db"
+DEFAULT_GROUND_TRUTH = "data/ground_truth.jsonl"
+
+
+@dataclass(slots=True, kw_only=True)
+class HarnessDefaults:
+    """Default CLI argument values for harness commands."""
+
+    k: int = 10
+    concurrency: int = 3
+
+
+@dataclass(slots=True, kw_only=True)
+class HarnessDiffThresholds:
+    """Thresholds that mark a category delta as a significant regression."""
+
+    threshold_absolute: float = 0.05
+    threshold_relative: float = 5.0
+
+
+@dataclass(slots=True, kw_only=True)
+class HarnessConfig:
+    """Resolved harness configuration (file config with CLI overrides applied)."""
+
+    adapter: str = ""
+    ground_truth: str = DEFAULT_GROUND_TRUTH
+    db: str = DEFAULT_DB
+    defaults: HarnessDefaults = field(default_factory=HarnessDefaults)
+    diff: HarnessDiffThresholds = field(default_factory=HarnessDiffThresholds)

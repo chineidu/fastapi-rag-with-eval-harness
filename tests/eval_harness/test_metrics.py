@@ -4,12 +4,12 @@ import pytest
 
 from src.eval_harness.metrics import (
     OVERALL_CATEGORY,
-    ScoredQuery,
     _aggregate_scores,
     aggregate_by_category,
     precision_at_k,
     recall_at_k,
 )
+from src.schemas.harness import ScoredQuery
 
 
 class TestRecallAtK:

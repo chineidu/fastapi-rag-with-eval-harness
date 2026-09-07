@@ -1,6 +1,6 @@
 """Tests for the eval_harness.adapter module."""
 
-from src.eval_harness.adapter import RetrievalResult
+from src.schemas.harness import RetrievalResult
 
 
 class TestRetrievalResult:

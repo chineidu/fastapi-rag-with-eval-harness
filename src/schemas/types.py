@@ -63,6 +63,13 @@ class QueryResultStatus(StrEnum):
     FATAL = "fatal"
 
 
+class DiffFlagEnum(StrEnum):
+    """Per-category delta flags for run diffs."""
+
+    IMPROVED = "improved"
+    REGRESSED = "regressed"
+
+
 # ======= NamedTuples =======
 class RepoHandle(NamedTuple):
     """A pair of immutable strings representing the owner and name of a GitHub repository."""

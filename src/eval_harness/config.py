@@ -1,41 +1,51 @@
 """OmegaConf-backed harness configuration (``.rag-eval.yaml``)."""
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from omegaconf import OmegaConf
 
-DEFAULT_DB = "data/.rag-eval/runs.db"
-DEFAULT_GROUND_TRUTH = "data/ground_truth.jsonl"
+from src.schemas.containers import (
+    DEFAULT_DB,
+    DEFAULT_GROUND_TRUTH,
+    HarnessConfig,
+    HarnessDefaults,
+    HarnessDiffThresholds,
+)
+
 DEFAULT_CONFIG_PATH = Path(".rag-eval.yaml")
 
 
-@dataclass(slots=True, kw_only=True)
-class HarnessDefaults:
-    """Default CLI argument values for harness commands."""
+def _validate_config(cfg: HarnessConfig) -> HarnessConfig:
+    """Check range invariants shared by file-loaded and CLI-overridden configs.
 
-    k: int = 10
-    concurrency: int = 3
+    Parameters
+    ----------
+    cfg : HarnessConfig
+        Config to validate.
 
+    Returns
+    -------
+    HarnessConfig
+        The same config, unchanged.
 
-@dataclass(slots=True, kw_only=True)
-class HarnessDiffThresholds:
-    """Thresholds that mark a category delta as a significant regression."""
+    Raises
+    ------
+    ValueError
+        If ``k``, ``concurrency``, or thresholds are out of range.
 
-    threshold_absolute: float = 0.05
-    threshold_relative: float = 5.0
-
-
-@dataclass(slots=True, kw_only=True)
-class HarnessConfig:
-    """Resolved harness configuration (file config with CLI overrides applied)."""
-
-    adapter: str = ""
-    ground_truth: str = DEFAULT_GROUND_TRUTH
-    db: str = DEFAULT_DB
-    defaults: HarnessDefaults = field(default_factory=HarnessDefaults)
-    diff: HarnessDiffThresholds = field(default_factory=HarnessDiffThresholds)
+    """
+    if cfg.defaults.k <= 0:
+        raise ValueError(f"k must be positive, got {cfg.defaults.k}")
+    if cfg.defaults.concurrency <= 0:
+        raise ValueError(
+            f"concurrency must be positive, got {cfg.defaults.concurrency}"
+        )
+    if cfg.diff.threshold_absolute < 0:
+        raise ValueError("threshold_absolute must not be negative")
+    if cfg.diff.threshold_relative < 0:
+        raise ValueError("threshold_relative must not be negative")
+    return cfg
 
 
 def _from_dict(data: dict[str, Any]) -> HarnessConfig:
@@ -72,17 +82,7 @@ def _from_dict(data: dict[str, Any]) -> HarnessConfig:
             threshold_relative=float(diff_raw.get("threshold_relative", 5.0)),
         ),
     )
-    if cfg.defaults.k <= 0:
-        raise ValueError(f"k must be positive, got {cfg.defaults.k}")
-    if cfg.defaults.concurrency <= 0:
-        raise ValueError(
-            f"concurrency must be positive, got {cfg.defaults.concurrency}"
-        )
-    if cfg.diff.threshold_absolute < 0:
-        raise ValueError("threshold_absolute must not be negative")
-    if cfg.diff.threshold_relative < 0:
-        raise ValueError("threshold_relative must not be negative")
-    return cfg
+    return _validate_config(cfg)
 
 
 def load_harness_config(path: Path | str | None = None) -> HarnessConfig:
@@ -152,26 +152,28 @@ def apply_cli_overrides(
         New config with overrides applied.
 
     """
-    return HarnessConfig(
-        adapter=adapter if adapter is not None else cfg.adapter,
-        ground_truth=ground_truth if ground_truth is not None else cfg.ground_truth,
-        db=db if db is not None else cfg.db,
-        defaults=HarnessDefaults(
-            k=k if k is not None else cfg.defaults.k,
-            concurrency=concurrency
-            if concurrency is not None
-            else cfg.defaults.concurrency,
-        ),
-        diff=HarnessDiffThresholds(
-            threshold_absolute=(
-                threshold_absolute
-                if threshold_absolute is not None
-                else cfg.diff.threshold_absolute
+    return _validate_config(
+        HarnessConfig(
+            adapter=adapter if adapter is not None else cfg.adapter,
+            ground_truth=ground_truth if ground_truth is not None else cfg.ground_truth,
+            db=db if db is not None else cfg.db,
+            defaults=HarnessDefaults(
+                k=k if k is not None else cfg.defaults.k,
+                concurrency=concurrency
+                if concurrency is not None
+                else cfg.defaults.concurrency,
             ),
-            threshold_relative=(
-                threshold_relative
-                if threshold_relative is not None
-                else cfg.diff.threshold_relative
+            diff=HarnessDiffThresholds(
+                threshold_absolute=(
+                    threshold_absolute
+                    if threshold_absolute is not None
+                    else cfg.diff.threshold_absolute
+                ),
+                threshold_relative=(
+                    threshold_relative
+                    if threshold_relative is not None
+                    else cfg.diff.threshold_relative
+                ),
             ),
-        ),
+        )
     )

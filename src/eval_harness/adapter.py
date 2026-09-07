@@ -1,20 +1,8 @@
 """Retriever adapter contract between the harness and a project-specific RAG system."""
 
-from dataclasses import dataclass, field
 from typing import Protocol
 
-
-@dataclass(slots=True)
-class RetrievalResult:
-    """Documents retrieved for one query, with optional audit metadata.
-
-    The harness operates at the document level (file paths). Chunk-to-doc
-    deduplication is the adapter's responsibility; chunk metadata goes in
-    ``metadata`` for auditability.
-    """
-
-    documents: list[tuple[str, float]]
-    metadata: dict[str, object] = field(default_factory=dict)
+from src.schemas.harness import RetrievalResult
 
 
 class RetrieverAdapter(Protocol):
