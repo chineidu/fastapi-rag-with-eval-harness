@@ -1,4 +1,9 @@
-# Harness config (committed). CLI flags override these values.
+# Eval harness config (committed team defaults, optional - the CLI falls back
+# to built-in defaults when this file is missing). Its main job is pinning
+# `adapter`, which has no built-in default: without this file (or --adapter),
+# `rag-eval run` does not know which retriever to evaluate. Paths are relative
+# to the directory you run `rag-eval` from. Precedence: CLI flags > --config
+# file > ./.rag-eval.yaml > built-in defaults.
 adapter: "app.adapter:Retriever"
 ground_truth: data/ground_truth.jsonl
 db: data/.rag-eval/runs.db

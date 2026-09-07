@@ -33,7 +33,9 @@
   - added `--config` flag (not in architecture.md) to point at an explicit `.rag-eval.yaml`; `run` exits 1 on partial runs
   - typer added as explicit dependency via `uv add typer` (was transitive via fastapi[standard])
 - [x] B8 `.rag-eval.yaml` committed (tracked)
-- [ ] B9 acceptance: dummy run → SQLite; `diff` two runs; commit (blocked on B7)
+- [x] B9 acceptance: dummy run → SQLite; `diff` two runs; commit
+  - throwaway `EmptyAdapter` (recall 0.0) vs `OracleAdapter` (recall ~0.98) over all 70 queries; both `complete` 70/70 in `data/.rag-eval/runs.db`
+  - `diff` both directions flags improved/regressed per category; exit 1 on regression, 0 on improvement; `list` renders both runs
 
 ## Phase D — Baseline adapter (`src/app/`)
 
