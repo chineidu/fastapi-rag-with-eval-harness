@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Self
 
 from src import create_logger
+from src.schemas.harness import RetrievedDocument
 from src.schemas.types import QueryResultStatus, RunStatus
 
 logger = create_logger(name=__name__)
@@ -126,7 +127,7 @@ class ResultStore:
         query_id: str,
         category: str,
         k_value: int,
-        retrieved_docs: Sequence[Sequence[object]],
+        retrieved_docs: Sequence[RetrievedDocument],
         ground_truth: Sequence[str],
         recall_at_k: float | None,
         precision_at_k: float | None,
@@ -147,8 +148,8 @@ class ResultStore:
             Difficulty category (drives per-category breakdown).
         k_value : int
             Retrieval depth used for the metrics.
-        retrieved_docs : Sequence[Sequence[object]]
-            Full ranked ``(doc_path, score)`` list, stored as JSON.
+        retrieved_docs : Sequence[RetrievedDocument]
+            Full ranked document list, stored as JSON.
         ground_truth : Sequence[str]
             Relevant doc paths, stored as JSON.
         recall_at_k : float | None
@@ -165,7 +166,9 @@ class ResultStore:
             Catch-all JSON for experimental metrics.
 
         """
-        retrieved_json = json.dumps([[doc, score] for doc, score in retrieved_docs])
+        retrieved_json = json.dumps(
+            [{"doc_path": doc.doc_path, "score": doc.score} for doc in retrieved_docs]
+        )
         ground_truth_json = json.dumps(list(ground_truth))
         extra_json = (
             json.dumps(dict(metrics_extra)) if metrics_extra is not None else None

@@ -19,6 +19,7 @@ from src.schemas.containers import (
 from src.schemas.harness import (
     QueryOutcome,
     RetrievalResult,
+    RetrievedDocument,
     RunSummary,
     ScoredQuery,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "QueryResultStatus",
     "ResultStore",
     "RetrievalResult",
+    "RetrievedDocument",
     "RetrieverAdapter",
     "RunStatus",
     "RunSummary",

@@ -17,6 +17,7 @@ from src.eval_harness.store import QueryResultStatus, ResultStore, RunStatus
 from src.schemas.harness import (
     QueryOutcome,
     RetrievalResult,
+    RetrievedDocument,
     RunSummary,
     ScoredQuery,
 )
@@ -69,9 +70,8 @@ def validate_result(result: object) -> RetrievalResult:
     Raises
     ------
     TypeError
-        If ``result`` is not a ``RetrievalResult``.
-    ValueError
-        If ``documents`` entries are not ``(doc_path, score)`` pairs.
+        If ``result`` is not a ``RetrievalResult`` or entries are not
+        ``RetrievedDocument``.
 
     """
     if not isinstance(result, RetrievalResult):
@@ -79,13 +79,8 @@ def validate_result(result: object) -> RetrievalResult:
             f"Adapter must return RetrievalResult, got {type(result).__name__}"
         )
     for entry in result.documents:
-        if (
-            not isinstance(entry, (list, tuple))
-            or len(entry) != 2
-            or not isinstance(entry[0], str)
-            or not isinstance(entry[1], (int, float))
-        ):
-            raise ValueError(f"Malformed retrieved document entry: {entry!r}")
+        if not isinstance(entry, RetrievedDocument):
+            raise TypeError(f"Malformed retrieved document entry: {entry!r}")
     return result
 
 
@@ -293,7 +288,7 @@ class EvalRunner:
                     answerable=record.answerable,
                 )
             latency_ms = (time.monotonic() - start) * 1000.0
-            retrieved_paths = [doc for doc, _ in result.documents[: self._k]]
+            retrieved_paths = [doc.doc_path for doc in result.documents[: self._k]]
             recall = recall_at_k(retrieved_paths, record.relevant_docs, self._k)
             precision = precision_at_k(retrieved_paths, record.relevant_docs, self._k)
             self._store.save_result(
@@ -301,7 +296,7 @@ class EvalRunner:
                 record.query_id,
                 record.label,
                 self._k,
-                [(doc, float(score)) for doc, score in result.documents[: self._k]],
+                list(result.documents[: self._k]),
                 record.relevant_docs,
                 recall,
                 precision,
@@ -311,7 +306,7 @@ class EvalRunner:
             return QueryOutcome(
                 query_id=record.query_id,
                 category=record.label,
-                retrieved_docs=[(doc, float(score)) for doc, score in result.documents],
+                retrieved_docs=list(result.documents),
                 recall_at_k=recall,
                 precision_at_k=precision,
                 latency_ms=latency_ms,

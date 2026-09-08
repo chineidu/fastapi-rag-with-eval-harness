@@ -25,7 +25,7 @@ class RetrieverAdapter(Protocol):
         Returns
         -------
         RetrievalResult
-            Ranked ``(doc_path, score)`` pairs plus audit metadata.
+            Ranked ``RetrievedDocument`` list plus audit metadata.
 
         """
         ...

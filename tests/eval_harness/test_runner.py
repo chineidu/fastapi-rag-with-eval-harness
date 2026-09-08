@@ -8,7 +8,12 @@ from src.eval_harness.runner import (
     validate_result,
 )
 from src.eval_harness.store import ResultStore
-from src.schemas.harness import QueryOutcome, RetrievalResult, RunSummary
+from src.schemas.harness import (
+    QueryOutcome,
+    RetrievalResult,
+    RetrievedDocument,
+    RunSummary,
+)
 from src.schemas.models import GroundTruthRecord
 
 RECORD = GroundTruthRecord(
@@ -81,7 +86,7 @@ class TestValidateResult:
     def test_valid_result_passes(self) -> None:
         """Given a valid RetrievalResult, then it is returned unchanged."""
         # Given
-        result = RetrievalResult(documents=[("a.md", 0.9)])
+        result = RetrievalResult(documents=[RetrievedDocument("a.md", 0.9)])
 
         # When
         validated = validate_result(result)
@@ -95,43 +100,35 @@ class TestValidateResult:
         with pytest.raises(TypeError, match="Adapter must return RetrievalResult"):
             validate_result("not a result")
 
-    def test_wrong_entry_length_raises(self) -> None:
-        """Given a document entry with wrong length, then ValueError is raised."""
+    def test_wrong_entry_type_raises(self) -> None:
+        """Given a document entry of the wrong type, then TypeError is raised."""
         # Given
-        result = RetrievalResult(documents=[("a.md", 0.9, "extra")])  # type: ignore
+        result = RetrievalResult(documents=["a.md"])  # type: ignore
 
         # When / Then
-        with pytest.raises(ValueError, match="Malformed"):
+        with pytest.raises(TypeError, match="Malformed"):
             validate_result(result)
 
     def test_non_string_doc_path_raises(self) -> None:
-        """Given a document entry with non-string path, then ValueError is raised."""
-        # Given
-        result = RetrievalResult(documents=[(123, 0.9)])  # type: ignore
-
-        # When / Then
-        with pytest.raises(ValueError, match="Malformed"):
-            validate_result(result)
+        """Given a document with non-string path, then TypeError is raised."""
+        # Given / When / Then
+        with pytest.raises(TypeError, match="doc_path must be str"):
+            RetrievedDocument(123, 0.9)  # type: ignore
 
     def test_non_numeric_score_raises(self) -> None:
-        """Given a document entry with non-numeric score, then ValueError is raised."""
-        # Given
-        result = RetrievalResult(documents=[("a.md", "high")])  # type: ignore
+        """Given a document with non-numeric score, then TypeError is raised."""
+        # Given / When / Then
+        with pytest.raises(TypeError, match="score must be numeric"):
+            RetrievedDocument("a.md", "high")  # type: ignore
 
-        # When / Then
-        with pytest.raises(ValueError, match="Malformed"):
-            validate_result(result)
-
-    def test_list_entry_is_accepted(self) -> None:
-        """Given a document entry as list, then it is accepted."""
-        # Given
-        result = RetrievalResult(documents=[["a.md", 0.9]])  # type: ignore
-
-        # When
-        validated = validate_result(result)
+    def test_int_score_coerced_to_float(self) -> None:
+        """Given an int score, then it is coerced to float."""
+        # Given / When
+        doc = RetrievedDocument("a.md", 1)
 
         # Then
-        assert validated.documents[0] == ["a.md", 0.9]
+        assert doc.score == 1.0
+        assert isinstance(doc.score, float)
 
 
 class TestQueryOutcome:
@@ -440,7 +437,7 @@ class StubAdapter:
     """Minimal adapter that returns deterministic results for testing."""
 
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
-        return RetrievalResult(documents=[("docs/quickstart.md", 0.9)])
+        return RetrievalResult(documents=[RetrievedDocument("docs/quickstart.md", 0.9)])
 
     def generate(self, query: str, documents: list[str]) -> str:
         return "stub answer"

@@ -1,10 +1,12 @@
 """Tests for the eval_harness.store module."""
 
+import json
 import sqlite3
 
 import pytest
 
 from src.eval_harness.store import ResultStore
+from src.schemas.harness import RetrievedDocument
 
 
 class TestResultStoreInit:
@@ -138,7 +140,7 @@ class TestResultStoreSaveResult:
             query_id="q1",
             category="DIRECT_LOOKUP",
             k_value=10,
-            retrieved_docs=[["doc/a.md", 0.9]],
+            retrieved_docs=[RetrievedDocument("doc/a.md", 0.9)],
             ground_truth=["doc/a.md"],
             recall_at_k=1.0,
             precision_at_k=0.5,
@@ -150,6 +152,9 @@ class TestResultStoreSaveResult:
         assert len(results) == 1
         assert results[0]["query_id"] == "q1"
         assert results[0]["recall_at_k"] == 1.0
+        assert json.loads(results[0]["retrieved_docs"]) == [
+            {"doc_path": "doc/a.md", "score": 0.9}
+        ]
         store.close()
 
     def test_saves_failed_result(self, tmp_path) -> None:

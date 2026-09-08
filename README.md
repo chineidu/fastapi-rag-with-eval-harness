@@ -112,7 +112,7 @@ class RetrieverAdapter(Protocol):
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult: ...
 ```
 
-`RetrievalResult.documents` is a ranked list of `(doc_path, score)` pairs.
+`RetrievalResult.documents` is a ranked list of `RetrievedDocument` (`doc_path`, `score` pairs).
 Chunk-to-doc mapping is the adapter's job; the harness scores at doc level.
 `generate()` is reserved for future generation eval.
 

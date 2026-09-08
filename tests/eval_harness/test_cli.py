@@ -14,7 +14,7 @@ from src.eval_harness.cli import _category_means, app, load_adapter
 from src.eval_harness.loader import GroundTruthLoader
 from src.eval_harness.runner import EvalRunner
 from src.eval_harness.store import ResultStore
-from src.schemas.harness import RetrievalResult
+from src.schemas.harness import RetrievalResult, RetrievedDocument
 from src.schemas.models import GroundTruthRecord
 
 RUNNER = CliRunner()
@@ -29,7 +29,7 @@ class StubAdapter:
 
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
         """Return the configured document with a fixed score."""
-        return RetrievalResult(documents=[(self._doc, 0.9)])
+        return RetrievalResult(documents=[RetrievedDocument(self._doc, 0.9)])
 
     def generate(self, query: str, documents: list[str]) -> str:
         """Return a stub answer."""
@@ -112,7 +112,7 @@ class TestLoadAdapter:
         adapter = load_adapter("fake_adapter:FakeAdapter")
 
         # Then
-        assert adapter.retrieve("q", 1).documents[0][0] == "docs/quickstart.md"
+        assert adapter.retrieve("q", 1).documents[0].doc_path == "docs/quickstart.md"
 
     def test_module_attr_without_colon(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Given a module.Class path, then the adapter is instantiated."""
@@ -123,7 +123,7 @@ class TestLoadAdapter:
         adapter = load_adapter("fake_adapter.FakeAdapter")
 
         # Then
-        assert adapter.retrieve("q", 1).documents[0][0] == "docs/quickstart.md"
+        assert adapter.retrieve("q", 1).documents[0].doc_path == "docs/quickstart.md"
 
     def test_dotted_nested_attribute(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Given a dotted attribute path, then it is resolved."""
@@ -134,7 +134,7 @@ class TestLoadAdapter:
         adapter = load_adapter("fake_adapter:nested.Deep")
 
         # Then
-        assert adapter.retrieve("q", 1).documents[0][0] == "docs/quickstart.md"
+        assert adapter.retrieve("q", 1).documents[0].doc_path == "docs/quickstart.md"
 
     def test_missing_module_raises(self) -> None:
         """Given an unknown module, then ImportError is raised."""
