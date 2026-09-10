@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from src.schemas.types import VectorStoreBackendEnum
+
 
 @dataclass(slots=True, kw_only=True)
 class CORS:
@@ -209,6 +211,40 @@ class RAGConfig:
 
     llm: RAGLLMConfig = field(
         metadata={"description": "LLM settings for RAG/QA generation."}
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class QdrantConfig:
+    """Connection and collection settings for the self-hosted Qdrant backend."""
+
+    host: str = field(
+        default="localhost", metadata={"description": "Qdrant server host."}
+    )
+    port: int = field(default=6333, metadata={"description": "Qdrant server port."})
+    collection: str = field(
+        default="fastapi_docs",
+        metadata={"description": "Qdrant collection name for the indexed corpus."},
+    )
+
+
+@dataclass(slots=True, kw_only=True)
+class IndexerConfig:
+    """Configuration for the document indexer (chunk, embed, upsert)."""
+
+    backend: VectorStoreBackendEnum = field(
+        default=VectorStoreBackendEnum.QDRANT,
+        metadata={"description": "Active vector store backend."},
+    )
+    qdrant: QdrantConfig = field(
+        default_factory=QdrantConfig,
+        metadata={"description": "Qdrant backend settings."},
+    )
+    chunk_size: int = field(
+        default=2000, metadata={"description": "Chunk size in characters."}
+    )
+    overlap: int = field(
+        default=0, metadata={"description": "Chunk overlap in characters."}
     )
 
 

@@ -7,6 +7,7 @@ from src.schemas.containers import (
     DatabaseConfig,
     EmbeddingsConfig,
     EvalPipelineConfig,
+    IndexerConfig,
     RAGConfig,
 )
 
@@ -61,4 +62,8 @@ class AppConfig(BaseModel):
     )
     rag_config: RAGConfig = Field(
         description="Configuration settings for the RAG/QA pipeline"
+    )
+    indexer_config: IndexerConfig = Field(
+        default_factory=IndexerConfig,
+        description="Configuration for the document indexer and vector store",
     )

@@ -17,7 +17,9 @@
 - [x] A2 `src/embeddings/` — `AbstractEmbedder` (ABC) + `LocalEmbedder` + `ApiEmbedder` + `StubEmbedder` + `make_embedder` factory + config wiring + tests (renamed from `EmbedderPort` Protocol in `fba7111`)
 - [x] A3 `scripts/label_ground_truth.py` — embed corpus (cache `.np`) → top-30 cosine → LLM judge → confidence gates → JSONL output; add `src/schemas/ground_truth.py` (pipeline + schema shipped in `82b57b8`)
 - [x] A3b incremental JSONL writes + resume-on-crash + `--dry-run` + legacy JSON-array truncation + `--limit` (commit `9a8e089`)
-- [x] A4 acceptance: `data/ground_truth.jsonl` exists and validates; counts ≈ 38/17/15; commit (70 records: 39 answerable + 31 unanswerable; labels 38/17/15; **unanswerable queries marked `answerable: false` with empty `relevant_docs` instead of synthetic top-1 fallback** — the 31 fallbacks were mostly GitHub bug reports/regressions not answerable from docs; `GroundTruthRecord` gained `answerable` field with consistency validator; runner excludes unanswerable from recall@k means and reports `unanswerable` count in `RunSummary`; `top_k` default stays 30)
+- [x] A4 acceptance: `data/ground_truth.jsonl` exists and validates; counts ≈ 38/17/15; commit (70 records: 39 answerable + 31 unanswerable; labels 38/17/15;
+**unanswerable queries marked `answerable: false` with empty `relevant_docs` instead of synthetic top-1 fallback** — the 31 fallbacks were mostly GitHub bug reports/regressions not answerable from docs.
+`GroundTruthRecord` gained `answerable` field with consistency validator; runner excludes unanswerable from recall@k means and reports `unanswerable` count in `RunSummary`; `top_k` default stays 30)
 
 ## Phase B — Harness (`src/eval_harness/`)
 
@@ -39,7 +41,7 @@
 
 ## Phase D — Baseline adapter (`src/app/`)
 
-- [ ] D1 `chunker.py` — naive ~500-token, no overlap
+- [x] D1 `chunker.py` — naive ~500-token, no overlap
 - [ ] D2 `indexer.py` — embed chunks, store vectors + chunk→doc map
 - [ ] D3 `adapter.py` — `LocalRetriever` (top-k cosine, dedupe to docs)
 - [ ] D4 adapter config (chunk size, model, index path)

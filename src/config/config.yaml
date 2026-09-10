@@ -73,3 +73,12 @@ config:
       timeout_seconds: 120
       max_retries: 3
       seed: 47
+
+  indexer_config:
+    backend: "qdrant"
+    qdrant:
+      host: "localhost"
+      port: 6333
+      collection: "fastapi_docs"
+    chunk_size: 2000
+    overlap: 0

@@ -41,4 +41,15 @@ class Chunk:
     doc_path: str
 
 
-__all__ = ["Chunk"]
+@dataclass(slots=True, frozen=True)
+class SearchHit:
+    """One retrieval result with its stored chunk metadata."""
+
+    chunk_id: str
+    doc_path: str
+    chunk_index: int
+    text: str
+    score: float
+
+
+__all__ = ["Chunk", "SearchHit"]

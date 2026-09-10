@@ -40,6 +40,12 @@ class EmbeddingProviderEnum(StrEnum):
     STUB = "stub"
 
 
+class VectorStoreBackendEnum(StrEnum):
+    """Vector store backends for the document indexer."""
+
+    QDRANT = "qdrant"
+
+
 class VerdictEnum(StrEnum):
     """Binary relevance verdicts for the LLM judge."""
 
