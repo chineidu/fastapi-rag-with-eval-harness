@@ -4,7 +4,7 @@
 # `rag-eval run` does not know which retriever to evaluate. Paths are relative
 # to the directory you run `rag-eval` from. Precedence: CLI flags > --config
 # file > ./.rag-eval.yaml > built-in defaults.
-adapter: "app.adapter:Retriever"
+adapter: "src.app.adapter:LocalRetriever"
 ground_truth: data/ground_truth.jsonl
 db: data/.rag-eval/runs.db
 

@@ -121,7 +121,7 @@ class QdrantVectorStore(BaseVectorStore):
         self._client.upsert(collection_name=self._collection, points=points)
 
     def search(self, query_vector: list[float], k: int) -> list[SearchHit]:
-        """Return the top-k chunks, excluding the sentinel meta point."""
+        """Return the top-k chunks in Qdrant's descending score order, excluding the sentinel meta point."""
         results = self._client.query_points(
             collection_name=self._collection,
             query=query_vector,

@@ -42,8 +42,10 @@
 ## Phase D — Baseline adapter (`src/app/`)
 
 - [x] D1 `chunker.py` — naive ~500-token, no overlap
-- [ ] D2 `indexer.py` — embed chunks, store vectors + chunk→doc map
-- [ ] D3 `adapter.py` — `LocalRetriever` (top-k cosine, dedupe to docs)
-- [ ] D4 adapter config (chunk size, model, index path)
+- [x] D2 `indexer.py` — embed chunks, store vectors + chunk→doc map
+- [x] D3 `adapter.py` — `LocalRetriever` (top-k cosine, dedupe to docs)
+- [x] D4 adapter config (chunk size, model, index path)
+  - realized as `retriever_config.overfetch_factor` (default 5, ADR-0021); model/chunk settings reused from `embeddings_config` + `indexer_config` so query vectors cannot drift from the indexed ones
+  - `.rag-eval.yaml` adapter path fixed to `src.app.adapter:LocalRetriever` (previous `app.adapter:Retriever` did not import)
 - [ ] D5 first run `--tag v1-baseline`
 - [ ] D6 acceptance: 70 queries; `diff` renders; commit

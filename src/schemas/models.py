@@ -9,6 +9,7 @@ from src.schemas.containers import (
     EvalPipelineConfig,
     IndexerConfig,
     RAGConfig,
+    RetrieverConfig,
 )
 
 
@@ -66,4 +67,8 @@ class AppConfig(BaseModel):
     indexer_config: IndexerConfig = Field(
         default_factory=IndexerConfig,
         description="Configuration for the document indexer and vector store",
+    )
+    retriever_config: RetrieverConfig = Field(
+        default_factory=RetrieverConfig,
+        description="Configuration for query-time retrieval",
     )

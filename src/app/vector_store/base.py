@@ -28,7 +28,10 @@ class VectorStore(Protocol):
         ...
 
     def search(self, query_vector: list[float], k: int) -> list[SearchHit]:
-        """Return the top-k most similar chunks with metadata."""
+        """Return the top-k most similar chunks with metadata.
+
+        Hits must be ordered by similarity score, descending.
+        """
         ...
 
     def count(self) -> int:
@@ -101,7 +104,7 @@ class BaseVectorStore(ABC):
 
     @abstractmethod
     def search(self, query_vector: list[float], k: int) -> list[SearchHit]:
-        """Return the top-k chunks, excluding any meta sentinel."""
+        """Return the top-k chunks in descending score order, excluding any meta sentinel."""
         ...
 
     @abstractmethod

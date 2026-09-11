@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
-from src.config.config import app_config
+from src.config.config import app_config, config_path, load_app_config
 from src.schemas.containers import (
     CORS,
     APIConfig,
@@ -245,3 +247,32 @@ class TestModuleLevelAppConfig:
         assert app_config.eval_pipeline_config.defaults.github_category == "questions"
         assert app_config.rag_config.llm.model_id == "deepseek/deepseek-v4-flash"
         assert app_config.rag_config.llm.temperature == 0.1
+
+
+class TestLoadAppConfig:
+    def test_loads_from_explicit_path(self, tmp_path: Path) -> None:
+        """An explicit path overrides the bundled config.yaml."""
+        # Given
+        bundled = Path(config_path).read_text(encoding="utf-8")
+        yaml_path = tmp_path / "config.yaml"
+        yaml_path.write_text(
+            bundled.replace(
+                "title: RAG-based Question Answering System",
+                "title: Custom Title",
+            ),
+            encoding="utf-8",
+        )
+        # When
+        cfg = load_app_config(str(yaml_path))
+        # Then
+        assert cfg.api_config.title == "Custom Title"
+        assert cfg.api_config.name == "Custom Title"
+
+    def test_non_mapping_root_raises(self, tmp_path: Path) -> None:
+        """A YAML file whose ``config`` key is not a mapping is rejected."""
+        # Given
+        yaml_path = tmp_path / "config.yaml"
+        yaml_path.write_text("config: [not, a, mapping]\n", encoding="utf-8")
+        # When / Then
+        with pytest.raises(TypeError, match="Invalid app config"):
+            load_app_config(str(yaml_path))

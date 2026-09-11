@@ -249,6 +249,21 @@ class IndexerConfig:
 
 
 @dataclass(slots=True, kw_only=True)
+class RetrieverConfig:
+    """Query-time retrieval configuration for the baseline adapter."""
+
+    overfetch_factor: int = field(
+        default=5,
+        metadata={
+            "description": (
+                "Multiplier on k for the chunk-level candidate window before "
+                "deduplicating to documents (must be >= 1). See ADR-0021."
+            )
+        },
+    )
+
+
+@dataclass(slots=True, kw_only=True)
 class LabelingConfig:
     """Ground-truth labeling pipeline configuration."""
 

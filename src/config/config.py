@@ -1,16 +1,14 @@
 """Application configuration dataclasses backed by an OmegaConf YAML file."""
 
 from pathlib import Path
+from typing import Any
 
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 from src import ROOT
 from src.schemas.models import AppConfig
 
 config_path: Path = ROOT / "src/config/config.yaml"
-config: DictConfig = OmegaConf.load(config_path).config
-resolved_cfg = OmegaConf.to_container(config, resolve=True)
-app_config: AppConfig = AppConfig(**dict(resolved_cfg))  # type: ignore
 
 
 def load_app_config(path: str | None = None) -> AppConfig:
@@ -30,4 +28,10 @@ def load_app_config(path: str | None = None) -> AppConfig:
     cfg_path = Path(path) if path else config_path
     loaded = OmegaConf.load(cfg_path).config
     resolved = OmegaConf.to_container(loaded, resolve=True)
-    return AppConfig(**dict(resolved))  # type: ignore
+    if not isinstance(resolved, dict):
+        raise TypeError(f"Invalid app config in {cfg_path}")
+    data: dict[str, Any] = {str(key): value for key, value in resolved.items()}
+    return AppConfig(**data)
+
+
+app_config: AppConfig = load_app_config()
