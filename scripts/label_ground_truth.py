@@ -22,7 +22,7 @@ import openai
 import typer
 from anyio import Path as AsyncPath
 
-from src import create_logger
+from src import ROOT, create_logger
 from src.config import app_config, app_settings
 from src.embeddings import AbstractEmbedder, get_embedder
 from src.prompts import JUDGE_SYSTEM_PROMPT
@@ -70,6 +70,27 @@ _aclient = instructor.from_openai(_openai_client)
 # ---------------------------------------------------------------------------
 
 
+def _relative_doc_path(file: Path, root: Path) -> str:
+    """Return the ROOT-relative POSIX path, falling back to root-relative.
+
+    Mirrors the chunker's ``doc_path`` convention (ADR-0022) so ground truth
+    identifiers match indexed documents.
+    """
+    resolved = file.resolve()
+    try:
+        return resolved.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        try:
+            return resolved.relative_to(root.resolve()).as_posix()
+        except ValueError:
+            logger.warning(
+                "Corpus file %s resolves outside ROOT and %s, using link path",
+                file,
+                root,
+            )
+            return file.relative_to(root).as_posix()
+
+
 def _load_corpus(corpus_md_root: Path, corpus_py_root: Path) -> list[CorpusDocument]:
     """Load all corpus files (.md and .py) as CorpusDocument objects.
 
@@ -91,7 +112,7 @@ def _load_corpus(corpus_md_root: Path, corpus_py_root: Path) -> list[CorpusDocum
     # Markdown files
     if corpus_md_root.exists():
         for md_path in sorted(corpus_md_root.rglob("*.md")):
-            rel = str(md_path.relative_to(corpus_md_root.parent.parent.parent))
+            rel = _relative_doc_path(md_path, corpus_md_root)
             content = md_path.read_text(encoding="utf-8", errors="replace")
             if content.strip():
                 docs.append(CorpusDocument(path=rel, content=content))
@@ -99,7 +120,7 @@ def _load_corpus(corpus_md_root: Path, corpus_py_root: Path) -> list[CorpusDocum
     # Python files
     if corpus_py_root.exists():
         for py_path in sorted(corpus_py_root.rglob("*.py")):
-            rel = str(py_path.relative_to(corpus_py_root.parent.parent.parent))
+            rel = _relative_doc_path(py_path, corpus_py_root)
             content = py_path.read_text(encoding="utf-8", errors="replace")
             if content.strip():
                 docs.append(CorpusDocument(path=rel, content=content))

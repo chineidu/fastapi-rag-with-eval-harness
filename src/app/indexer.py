@@ -1,11 +1,13 @@
 """Document indexer: chunk, embed, and upsert into a vector store."""
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 from src.app.chunker import DEFAULT_CHUNK_SIZE, chunk_directory
 from src.app.vector_store import VectorStore
 from src.embeddings.base import AbstractEmbedder
+from src.schemas.retrieval import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +47,13 @@ class Indexer:
         self._chunk_size = chunk_size
         self._overlap = overlap
 
-    def build(self, corpus_root: Path, *, force: bool = False) -> int:
-        """Chunk, embed, and upsert a corpus directory.
+    def build(self, corpus_roots: Path | Sequence[Path], *, force: bool = False) -> int:
+        """Chunk, embed, and upsert one or more corpus directories.
 
         Parameters
         ----------
-        corpus_root : Path
-            Directory of ``.md``/``.py`` files to index.
+        corpus_roots : Path | Sequence[Path]
+            Directory (or directories) of ``.md``/``.py`` files to index.
         force : bool
             Rebuild the collection even if it already matches the embedder.
 
@@ -60,13 +62,36 @@ class Indexer:
         int
             Number of chunks indexed.
 
+        Raises
+        ------
+        TypeError
+            If ``corpus_roots`` is a string.
+        ValueError
+            If ``corpus_roots`` is an empty sequence.
+
         """
-        # Chunk the corpus into documents.
-        chunks = chunk_directory(
-            corpus_root, chunk_size=self._chunk_size, overlap=self._overlap
+        # Reject bare strings, which would otherwise iterate character by character.
+        if isinstance(corpus_roots, str):
+            raise TypeError(
+                "corpus_roots must be a Path or a sequence of Paths, "
+                f"not {type(corpus_roots).__name__}"
+            )
+        # Normalize to a non-empty tuple of roots.
+        roots = (
+            (corpus_roots,) if isinstance(corpus_roots, Path) else tuple(corpus_roots)
         )
+        if not roots:
+            raise ValueError("corpus_roots must not be empty")
+        # Chunk every root into one combined document list.
+        chunks: list[Chunk] = []
+        for root in roots:
+            chunks.extend(
+                chunk_directory(
+                    root, chunk_size=self._chunk_size, overlap=self._overlap
+                )
+            )
         if not chunks:
-            logger.warning("No chunks produced from %s", corpus_root)
+            logger.warning("No chunks produced from %s", roots)
             return 0
         # Ensure the collection matches the embedder (skip when idempotent).
         model_id = self._embedder.model_id

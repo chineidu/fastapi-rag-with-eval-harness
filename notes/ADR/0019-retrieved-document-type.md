@@ -2,14 +2,14 @@
 status: ratified
 date: 2026-09-08
 deciders: project owner
-supersedes: 0004-retriever-adapter-protocol
+amends: 0004-retriever-adapter-protocol
 ---
 
 # RetrievedDocument element type
 
 ## Context
 
-Supersedes ADR-0004 (retriever adapter protocol) for the element shape
+Amends ADR-0004 (retriever adapter protocol) for the element shape
 only. RetrievalResult.documents and QueryOutcome.retrieved_docs move from
 list[tuple[str, float]] to list[RetrievedDocument].
 

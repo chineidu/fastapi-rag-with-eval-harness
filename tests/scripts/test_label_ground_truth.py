@@ -160,6 +160,72 @@ class TestLoadCorpus:
         docs = mod._load_corpus(md_root, py_root)
         assert docs == []
 
+    def test_paths_are_root_relative(
+        self, label_ground_truth, tmp_path, monkeypatch
+    ) -> None:
+        """Corpus paths inside ROOT use the indexer's doc_path convention."""
+        # Given a corpus laid out under a fake repo root
+        monkeypatch.setattr(label_ground_truth, "ROOT", tmp_path)
+        md_root = tmp_path / "docs" / "fastapi" / "docs" / "en" / "docs"
+        md_root.mkdir(parents=True)
+        (md_root / "async.md").write_text("# Async")
+        py_root = tmp_path / "docs" / "fastapi" / "docs_src"
+        py_root.mkdir(parents=True)
+        (py_root / "main.py").write_text("x = 1")
+        # When
+        docs = label_ground_truth._load_corpus(md_root, py_root)
+        # Then
+        assert {d.path for d in docs} == {
+            "docs/fastapi/docs/en/docs/async.md",
+            "docs/fastapi/docs_src/main.py",
+        }
+
+
+class TestRelativeDocPath:
+    """Tests for the _relative_doc_path fallbacks (ADR-0022)."""
+
+    def test_outside_root_falls_back_to_corpus_root(
+        self, label_ground_truth, tmp_path, monkeypatch
+    ) -> None:
+        """Given a corpus outside ROOT, then paths are corpus-root-relative."""
+        # Given
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        monkeypatch.setattr(label_ground_truth, "ROOT", repo_root)
+        corpus_root = tmp_path / "external_corpus"
+        file = corpus_root / "tutorial" / "body.md"
+        file.parent.mkdir(parents=True)
+        file.write_text("# Body")
+        # When
+        rel = label_ground_truth._relative_doc_path(file, corpus_root)
+        # Then
+        assert rel == "tutorial/body.md"
+
+    def test_symlink_outside_both_roots_uses_link_path(
+        self, label_ground_truth, tmp_path, monkeypatch
+    ) -> None:
+        """Given a symlink escaping ROOT and the corpus, then the link path is used."""
+        # Given
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        monkeypatch.setattr(label_ground_truth, "ROOT", repo_root)
+        corpus_root = tmp_path / "corpus"
+        corpus_root.mkdir()
+        target = tmp_path / "outside" / "real.md"
+        target.parent.mkdir()
+        target.write_text("# Real")
+        link = corpus_root / "linked.md"
+        try:
+            link.symlink_to(target)
+        except OSError:
+            pytest.skip("symlinks not supported")
+        # When
+        with patch.object(label_ground_truth, "logger") as mock_logger:
+            rel = label_ground_truth._relative_doc_path(link, corpus_root)
+        # Then
+        assert rel == "linked.md"
+        mock_logger.warning.assert_called_once()
+
 
 class TestCosineTopK:
     def test_returns_k_indices(self, label_ground_truth) -> None:

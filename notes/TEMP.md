@@ -47,5 +47,10 @@
 - [x] D4 adapter config (chunk size, model, index path)
   - realized as `retriever_config.overfetch_factor` (default 5, ADR-0021); model/chunk settings reused from `embeddings_config` + `indexer_config` so query vectors cannot drift from the indexed ones
   - `.rag-eval.yaml` adapter path fixed to `src.app.adapter:LocalRetriever` (previous `app.adapter:Retriever` did not import)
-- [ ] D5 first run `--tag v1-baseline`
+- [x] D5 first run `--tag v1-baseline`
+  - prerequisites fixed before the run: GT md refs normalized to ROOT-relative (ADR-0022), `label_ground_truth._load_corpus` aligned, and `Indexer.build`/`rag-index --corpus` extended to index both corpus roots in one pass (1200 chunks; 1201 points incl. meta sentinel; `fastapi_docs`, 384-dim cosine)
+  - run 3: 70/70 complete, 31 unanswerable; recall@10 OVERALL 0.627 (DIRECT_LOOKUP 0.706, MULTI_HOP 0.479, CONCEPTUAL 0.506)
 - [ ] D6 acceptance: 70 queries; `diff` renders; commit
+  - run 4 `v1-baseline-repeat` identical per category; `diff v1-baseline v1-baseline-repeat` renders zero deltas, exit 0
+  - ADR-0020, ADR-0021, and ADR-0022 ratified 2026-09-11; commit pending owner confirmation
+  - qdrant-client pinned to `>=1.16,<1.17` (1.16.2) against server v1.16.3 (`docker-compose.yml`), so both sit on the 1.16 minor; `==1.15.1` exact-matched the old server pin but leaked sqlite ResourceWarnings in tests; run 5 `v1-baseline-check` matches the baseline exactly

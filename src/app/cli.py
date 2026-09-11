@@ -16,13 +16,22 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Corpus roots from ADR-0002: English markdown docs plus Python examples.
+DEFAULT_CORPUS_ROOTS: tuple[str, ...] = (
+    "docs/fastapi/docs/en/docs",
+    "docs/fastapi/docs_src",
+)
+
 
 @app.command()
 def build(
     corpus: Annotated[
-        str,
-        typer.Option("--corpus", help="Corpus root directory (relative to repo root)"),
-    ] = "docs/fastapi/docs/en/docs",
+        list[str] | None,
+        typer.Option(
+            "--corpus",
+            help="Corpus root directory, relative to repo root (repeatable)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option("--force", help="Rebuild even if already indexed"),
@@ -43,13 +52,21 @@ def build(
         chunk_size=cfg.indexer_config.chunk_size,
         overlap=cfg.indexer_config.overlap,
     )
-    # Resolve and validate the corpus path.
-    root = ROOT / corpus
-    if not root.exists():
-        typer.echo(f"error: corpus path does not exist: {root}", err=True)
+    # Reject empty path entries, which would resolve to ROOT itself.
+    requested = corpus or list(DEFAULT_CORPUS_ROOTS)
+    if any(not path.strip() for path in requested):
+        typer.echo("error: corpus path must not be empty", err=True)
+        raise typer.Exit(code=2)
+    # Resolve and validate the corpus paths (default: both corpus roots).
+    roots = [ROOT / path for path in requested]
+    missing = [str(root) for root in roots if not root.exists()]
+    if missing:
+        typer.echo(
+            f"error: corpus path(s) do not exist: {', '.join(missing)}", err=True
+        )
         raise typer.Exit(code=2)
     # Build and report.
-    count = indexer.build(root, force=force)
+    count = indexer.build(roots, force=force)
     typer.echo(
         f"Indexed {count} chunks into collection {cfg.indexer_config.qdrant.collection}"
     )

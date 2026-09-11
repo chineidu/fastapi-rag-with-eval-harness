@@ -1,6 +1,10 @@
 """Tests for the document indexer using an in-memory fake vector store."""
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
+
+import pytest
 
 from src.app.indexer import Indexer
 from src.embeddings.stub import StubEmbedder
@@ -13,6 +17,7 @@ class FakeVectorStore:
     def __init__(self) -> None:
         """Initialize empty storage for recorded calls."""
         self.ensured: tuple[str, int, bool] | None = None
+        self.ensure_calls = 0
         self.upserted: list[tuple[list[Chunk], list[list[float]]]] = []
         self._count = 0
 
@@ -20,6 +25,7 @@ class FakeVectorStore:
         self, model_id: str, dim: int, *, force: bool = False
     ) -> None:
         self.ensured = (model_id, dim, force)
+        self.ensure_calls += 1
 
     def upsert(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
         self.upserted.append((chunks, vectors))
@@ -75,3 +81,42 @@ class TestIndexer:
         indexer.build(tmp_path, force=True)
         # Then
         assert store.ensured == ("stub", 8, True)
+
+    def test_build_indexes_multiple_roots_in_one_pass(self, tmp_path: Path) -> None:
+        """Given two roots, then both are chunked, ensured once, and upserted once."""
+        # Given
+        md_root = tmp_path / "md"
+        md_root.mkdir()
+        (md_root / "a.md").write_text("markdown content " * 50, encoding="utf-8")
+        py_root = tmp_path / "py"
+        py_root.mkdir()
+        (py_root / "b.py").write_text("print('hello') " * 50, encoding="utf-8")
+        store = FakeVectorStore()
+        indexer = Indexer(StubEmbedder(dim=8), store, chunk_size=100, overlap=0)
+        # When
+        count = indexer.build([md_root, py_root])
+        # Then
+        assert count > 0
+        assert store.ensure_calls == 1
+        assert len(store.upserted) == 1
+        chunks, _ = store.upserted[0]
+        assert {chunk.doc_path for chunk in chunks} == {"a.md", "b.py"}
+        assert len(chunks) == count
+
+    def test_build_rejects_empty_root_sequence(self, tmp_path: Path) -> None:
+        """Given no roots, then build rejects the call."""
+        # Given
+        store = FakeVectorStore()
+        indexer = Indexer(StubEmbedder(dim=8), store)
+        # When / Then
+        with pytest.raises(ValueError, match="corpus_roots"):
+            indexer.build([])
+
+    def test_build_rejects_bare_string(self, tmp_path: Path) -> None:
+        """Given a bare string, then build raises instead of iterating characters."""
+        # Given
+        store = FakeVectorStore()
+        indexer = Indexer(StubEmbedder(dim=8), store)
+        # When / Then
+        with pytest.raises(TypeError, match="str"):
+            indexer.build(cast("Path | Sequence[Path]", str(tmp_path)))
