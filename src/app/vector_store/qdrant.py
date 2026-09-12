@@ -55,6 +55,10 @@ class QdrantVectorStore(BaseVectorStore):
         self._collection = cfg.collection
         self._client = client or QdrantClient(host=cfg.host, port=cfg.port)
 
+    def _collection_name(self) -> str:
+        """Return the configured collection name."""
+        return self._collection
+
     def _collection_exists(self) -> bool:
         """Return True when the target collection already exists."""
         return self._client.collection_exists(self._collection)
@@ -74,11 +78,11 @@ class QdrantVectorStore(BaseVectorStore):
     def _load_meta(self) -> dict[str, Any] | None:
         """Read the single sentinel meta point written by a prior run.
 
-        Returns the stored ``{"model_id", "dim"}`` dict, or ``None`` when the
-        collection has no sentinel (e.g. it was created elsewhere or is empty).
-        This reads only the tiny bookkeeping point, not the collection's chunk
-        data; it is used solely by ``ensure_collection`` for the idempotency
-        check.
+        Returns the stored ``{"model_id", "dim", "corpus_fingerprint"}`` dict, or
+        ``None`` when the collection has no sentinel (e.g. it was created
+        elsewhere or is empty). This reads only the tiny bookkeeping point, not
+        the collection's chunk data; it is used by ``ensure_collection`` and
+        ``describe``.
         """
         result = self._client.retrieve(
             collection_name=self._collection,
@@ -88,15 +92,20 @@ class QdrantVectorStore(BaseVectorStore):
         )
         return result[0].payload if result else None
 
-    def _store_meta(self, model_id: str, dim: int) -> None:
-        """Persist the ``{"model_id", "dim"}`` metadata as a sentinel point."""
+    def _store_meta(self, model_id: str, dim: int, fingerprint: str) -> None:
+        """Persist the model, dim, and corpus fingerprint as a sentinel point."""
         self._client.upsert(
             collection_name=self._collection,
             points=[
                 PointStruct(
                     id=_META_UUID,
                     vector=[0.0] * dim,
-                    payload={"is_meta": True, "model_id": model_id, "dim": dim},
+                    payload={
+                        "is_meta": True,
+                        "model_id": model_id,
+                        "dim": dim,
+                        "corpus_fingerprint": fingerprint,
+                    },
                 )
             ],
         )
@@ -145,7 +154,7 @@ class QdrantVectorStore(BaseVectorStore):
             )
         return hits
 
-    def count(self) -> int:
+    def chunk_count(self) -> int:
         """Count indexed chunks, excluding the sentinel meta point."""
         return self._client.count(
             collection_name=self._collection,

@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from src.app import cli as cli_module
+from src.schemas.retrieval import CollectionInfo, IndexReport
 
 RUNNER = CliRunner()
 
@@ -35,6 +36,7 @@ def cli_env(
             chunk_size=100,
             overlap=0,
             qdrant=SimpleNamespace(collection="test_docs"),
+            backend=SimpleNamespace(value="qdrant"),
         ),
     )
     monkeypatch.setattr(cli_module, "ROOT", tmp_path)
@@ -49,12 +51,35 @@ def cli_env(
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        def build(self, corpus_roots: list[Path], *, force: bool = False) -> int:
+        def build(
+            self, corpus_roots: list[Path], *, force: bool = False
+        ) -> IndexReport:
             calls.append((list(corpus_roots), force))
-            return 7
+            return IndexReport(indexed_chunks=7, skipped=False)
 
     monkeypatch.setattr(cli_module, "Indexer", RecordingIndexer)
     return tmp_path, calls
+
+
+def _stub_indexer(
+    monkeypatch: pytest.MonkeyPatch,
+    report: IndexReport,
+    store: Any = None,
+) -> None:
+    """Replace the indexer (and optionally the store) with fixed fakes."""
+
+    class StubIndexer:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def build(
+            self, corpus_roots: list[Path], *, force: bool = False
+        ) -> IndexReport:
+            return report
+
+    monkeypatch.setattr(cli_module, "Indexer", StubIndexer)
+    if store is not None:
+        monkeypatch.setattr(cli_module, "get_vector_store", lambda config: store)
 
 
 class TestBuildCommand:
@@ -67,7 +92,7 @@ class TestBuildCommand:
         # Given
         root, calls = cli_env
         # When
-        result = RUNNER.invoke(cli_module.app, [])
+        result = RUNNER.invoke(cli_module.app, ["build"])
         # Then
         assert result.exit_code == 0
         assert calls == [
@@ -92,7 +117,13 @@ class TestBuildCommand:
         # When
         result = RUNNER.invoke(
             cli_module.app,
-            ["--corpus", "docs/fastapi/docs_src", "--corpus", "extra"],
+            [
+                "build",
+                "--corpus",
+                "docs/fastapi/docs_src",
+                "--corpus",
+                "extra",
+            ],
         )
         # Then
         assert result.exit_code == 0
@@ -105,7 +136,7 @@ class TestBuildCommand:
         # Given
         _, calls = cli_env
         # When
-        result = RUNNER.invoke(cli_module.app, ["--corpus", "does/not/exist"])
+        result = RUNNER.invoke(cli_module.app, ["build", "--corpus", "does/not/exist"])
         # Then
         assert result.exit_code == 2
         assert "do not exist" in result.output
@@ -118,7 +149,7 @@ class TestBuildCommand:
         # Given
         _, calls = cli_env
         # When
-        result = RUNNER.invoke(cli_module.app, ["--corpus", ""])
+        result = RUNNER.invoke(cli_module.app, ["build", "--corpus", ""])
         # Then
         assert result.exit_code == 2
         assert "must not be empty" in result.output
@@ -131,7 +162,97 @@ class TestBuildCommand:
         # Given
         _, calls = cli_env
         # When
-        result = RUNNER.invoke(cli_module.app, ["--force"])
+        result = RUNNER.invoke(cli_module.app, ["build", "--force"])
         # Then
         assert result.exit_code == 0
         assert calls[0][1] is True
+
+    def test_skipped_build_reports_up_to_date(
+        self, cli_env: tuple[Path, list[BuildCall]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given an unchanged corpus, then the CLI reports the existing count."""
+        # Given
+        store = SimpleNamespace(chunk_count=lambda: 11)
+        _stub_indexer(monkeypatch, IndexReport(indexed_chunks=0, skipped=True), store)
+        # When
+        result = RUNNER.invoke(cli_module.app, ["build"])
+        # Then
+        assert result.exit_code == 0
+        assert "Index up to date: 11 chunks in collection test_docs" in result.output
+
+    def test_empty_corpus_reports_unchanged(
+        self, cli_env: tuple[Path, list[BuildCall]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given a corpus with no files, then the CLI reports nothing indexed."""
+        # Given
+        _stub_indexer(monkeypatch, IndexReport(indexed_chunks=0, skipped=False))
+        # When
+        result = RUNNER.invoke(cli_module.app, ["build"])
+        # Then
+        assert result.exit_code == 0
+        assert "No chunks produced" in result.output
+
+
+class TestInspectCommand:
+    """Tests for the rag-index inspect command."""
+
+    def _invoke(self, monkeypatch: pytest.MonkeyPatch, info: CollectionInfo) -> Any:
+        """Invoke inspect with a stubbed config and store."""
+        cfg = SimpleNamespace(
+            indexer_config=SimpleNamespace(backend=SimpleNamespace(value="qdrant"))
+        )
+        store = SimpleNamespace(describe=lambda: info)
+        monkeypatch.setattr(cli_module, "load_app_config", lambda path: cfg)
+        monkeypatch.setattr(cli_module, "get_vector_store", lambda config: store)
+        return RUNNER.invoke(cli_module.app, ["inspect"])
+
+    def test_prints_collection_stats(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Given an indexed collection, then inspect prints model, dim, and count."""
+        # Given
+        info = CollectionInfo(
+            exists=True,
+            collection="fastapi_docs",
+            model_id="BAAI/bge-small-en-v1.5",
+            dim=384,
+            chunk_count=1200,
+        )
+        # When
+        result = self._invoke(monkeypatch, info)
+        # Then
+        assert result.exit_code == 0
+        assert "Collection fastapi_docs (qdrant)" in result.output
+        assert "BAAI/bge-small-en-v1.5" in result.output
+        assert "384" in result.output
+        assert "1200" in result.output
+
+    def test_reports_not_indexed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Given a missing collection, then inspect reports it as not indexed."""
+        # Given
+        info = CollectionInfo(
+            exists=False,
+            collection="fastapi_docs",
+            model_id=None,
+            dim=None,
+            chunk_count=0,
+        )
+        # When
+        result = self._invoke(monkeypatch, info)
+        # Then
+        assert result.exit_code == 0
+        assert "not indexed" in result.output
+
+    def test_reports_unknown_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Given a collection without a meta sentinel, then model/dim are unknown."""
+        # Given
+        info = CollectionInfo(
+            exists=True,
+            collection="fastapi_docs",
+            model_id=None,
+            dim=None,
+            chunk_count=0,
+        )
+        # When
+        result = self._invoke(monkeypatch, info)
+        # Then
+        assert result.exit_code == 0
+        assert "unknown" in result.output

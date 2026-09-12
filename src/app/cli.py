@@ -1,4 +1,4 @@
-"""Command-line interface for building the document index (``rag-index``)."""
+"""Command-line interface for building and inspecting the document index (``rag-index``)."""
 
 from typing import Annotated
 
@@ -65,11 +65,42 @@ def build(
             f"error: corpus path(s) do not exist: {', '.join(missing)}", err=True
         )
         raise typer.Exit(code=2)
-    # Build and report.
-    count = indexer.build(roots, force=force)
-    typer.echo(
-        f"Indexed {count} chunks into collection {cfg.indexer_config.qdrant.collection}"
-    )
+    # Build and report the outcome.
+    report = indexer.build(roots, force=force)
+    collection = cfg.indexer_config.qdrant.collection
+    if report.skipped:
+        typer.echo(
+            f"Index up to date: {store.chunk_count()} chunks in collection {collection}"
+        )
+    elif report.indexed_chunks == 0:
+        typer.echo(f"No chunks produced; collection {collection} unchanged")
+    else:
+        typer.echo(
+            f"Indexed {report.indexed_chunks} chunks into collection {collection}"
+        )
+
+
+@app.command(name="inspect")
+def inspect_collection(
+    config_path: Annotated[
+        str,
+        typer.Option("--config", help="App config YAML path"),
+    ] = "",
+) -> None:
+    """Show the configured collection's model, dimension, and chunk count."""
+    cfg = load_app_config(config_path or None)
+    store = get_vector_store(cfg.indexer_config)
+    info = store.describe()
+    typer.echo(f"Collection {info.collection} ({cfg.indexer_config.backend.value})")
+    if not info.exists:
+        typer.echo("  status:      not indexed")
+        return
+    model_id = info.model_id if info.model_id is not None else "unknown"
+    dim = str(info.dim) if info.dim is not None else "unknown"
+    typer.echo("  status:      indexed")
+    typer.echo(f"  model_id:    {model_id}")
+    typer.echo(f"  dim:         {dim}")
+    typer.echo(f"  chunk_count: {info.chunk_count}")
 
 
 def main() -> None:

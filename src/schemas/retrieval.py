@@ -52,4 +52,48 @@ class SearchHit:
     score: float
 
 
-__all__ = ["Chunk", "SearchHit"]
+@dataclass(slots=True, frozen=True)
+class CollectionInfo:
+    """Read-only description of one vector store collection.
+
+    Parameters
+    ----------
+    exists : bool
+        Whether the collection exists in the backend.
+    collection : str
+        Collection name.
+    model_id : str | None
+        Embedding model recorded at index time, or ``None`` when absent.
+    dim : int | None
+        Vector dimension recorded at index time, or ``None`` when absent.
+    chunk_count : int
+        Number of indexed chunks, excluding the meta sentinel.
+
+    """
+
+    exists: bool
+    collection: str
+    model_id: str | None
+    dim: int | None
+    chunk_count: int
+
+
+@dataclass(slots=True, frozen=True)
+class IndexReport:
+    """Outcome of one indexer build call.
+
+    Parameters
+    ----------
+    indexed_chunks : int
+        Chunks embedded and upserted during this call.
+    skipped : bool
+        ``True`` when the corpus fingerprint matched and the index was
+        left untouched.
+
+    """
+
+    indexed_chunks: int
+    skipped: bool
+
+
+__all__ = ["Chunk", "CollectionInfo", "IndexReport", "SearchHit"]

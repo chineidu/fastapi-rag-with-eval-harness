@@ -1,10 +1,11 @@
 """Tests for QdrantVectorStore using an in-memory Qdrant client."""
 
 from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
 
 from src.app.vector_store import QdrantVectorStore
 from src.schemas.containers import QdrantConfig
-from src.schemas.retrieval import Chunk, SearchHit
+from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
 
 
 def _store() -> QdrantVectorStore:
@@ -29,33 +30,114 @@ def _chunk(chunk_id: str, doc_path: str, text: str) -> Chunk:
 class TestQdrantVectorStore:
     """Tests for the Qdrant-backed vector store."""
 
-    def test_ensure_collection_is_idempotent(self) -> None:
-        """Given a matching model/dim, then a second call skips rebuild."""
+    def test_ensure_collection_returns_true_on_create(self) -> None:
+        """Given no collection, then ensure creates it and reports a rebuild."""
         # Given
         store = _store()
-        store.ensure_collection("m", 4)
+        # When
+        rebuilt = store.ensure_collection("m", 4, fingerprint="f1")
+        # Then
+        assert rebuilt is True
+
+    def test_ensure_collection_is_idempotent(self) -> None:
+        """Given a matching model/dim/fingerprint, then a second call skips rebuild."""
+        # Given
+        store = _store()
+        store.ensure_collection("m", 4, fingerprint="f1")
         store.upsert([_chunk("c1", "a.md", "hello")], [[0.1, 0.2, 0.3, 0.4]])
         # When
-        store.ensure_collection("m", 4)
+        rebuilt = store.ensure_collection("m", 4, fingerprint="f1")
         # Then
-        assert store.count() == 1
+        assert rebuilt is False
+        assert store.chunk_count() == 1
 
-    def test_ensure_collection_rebuilds_on_mismatch(self) -> None:
+    def test_ensure_collection_rebuilds_on_model_mismatch(self) -> None:
         """Given a model/dim mismatch, then the collection is rebuilt."""
         # Given
         store = _store()
-        store.ensure_collection("m", 4)
+        store.ensure_collection("m", 4, fingerprint="f1")
         store.upsert([_chunk("c1", "a.md", "hello")], [[0.1, 0.2, 0.3, 0.4]])
         # When
-        store.ensure_collection("other", 4)
+        rebuilt = store.ensure_collection("other", 4, fingerprint="f1")
         # Then
-        assert store.count() == 0
+        assert rebuilt is True
+        assert store.chunk_count() == 0
+
+    def test_ensure_collection_rebuilds_on_fingerprint_mismatch(self) -> None:
+        """Given a corpus fingerprint mismatch, then the collection is rebuilt."""
+        # Given
+        store = _store()
+        store.ensure_collection("m", 4, fingerprint="f1")
+        store.upsert([_chunk("c1", "a.md", "hello")], [[0.1, 0.2, 0.3, 0.4]])
+        # When
+        rebuilt = store.ensure_collection("m", 4, fingerprint="f2")
+        # Then
+        assert rebuilt is True
+        assert store.chunk_count() == 0
+
+    def test_ensure_collection_force_rebuilds_matching_collection(self) -> None:
+        """Given --force semantics, then a matching collection is still rebuilt."""
+        # Given
+        store = _store()
+        store.ensure_collection("m", 4, fingerprint="f1")
+        store.upsert([_chunk("c1", "a.md", "hello")], [[0.1, 0.2, 0.3, 0.4]])
+        # When
+        rebuilt = store.ensure_collection("m", 4, fingerprint="f1", force=True)
+        # Then
+        assert rebuilt is True
+        assert store.chunk_count() == 0
+
+    def test_describe_missing_collection(self) -> None:
+        """Given no collection, then describe reports it as absent."""
+        # Given
+        store = _store()
+        # When
+        info = store.describe()
+        # Then
+        assert isinstance(info, CollectionInfo)
+        assert info.exists is False
+        assert info.collection == "test"
+        assert info.model_id is None
+        assert info.dim is None
+        assert info.chunk_count == 0
+
+    def test_describe_reports_metadata_and_count(self) -> None:
+        """Given an indexed collection, then describe returns its metadata."""
+        # Given
+        store = _store()
+        store.ensure_collection("m", 4, fingerprint="f1")
+        store.upsert([_chunk("c1", "a.md", "hello")], [[0.1, 0.2, 0.3, 0.4]])
+        # When
+        info = store.describe()
+        # Then
+        assert info.exists is True
+        assert info.collection == "test"
+        assert info.model_id == "m"
+        assert info.dim == 4
+        assert info.chunk_count == 1
+
+    def test_describe_without_meta_reports_unknown_model(self) -> None:
+        """Given a collection created outside the store, then model/dim are None."""
+        # Given
+        client = QdrantClient(location=":memory:")
+        client.create_collection(
+            collection_name="test",
+            vectors_config=VectorParams(size=4, distance=Distance.COSINE),
+        )
+        store = QdrantVectorStore(QdrantConfig(collection="test"), client=client)
+        # When
+        info = store.describe()
+        # Then
+        assert info.exists is True
+        assert info.model_id is None
+        assert info.dim is None
+        assert info.chunk_count == 0
 
     def test_upsert_and_search_returns_metadata(self) -> None:
         """Given upserted chunks, then search returns hits with payload."""
         # Given
         store = _store()
-        store.ensure_collection("m", 4)
+        store.ensure_collection("m", 4, fingerprint="f1")
         store.upsert(
             [
                 _chunk("c1", "a.md", "fastapi routing"),
@@ -77,19 +159,19 @@ class TestQdrantVectorStore:
         """Given a query, then the sentinel meta point is never returned."""
         # Given
         store = _store()
-        store.ensure_collection("m", 4)
+        store.ensure_collection("m", 4, fingerprint="f1")
         store.upsert([_chunk("c1", "a.md", "x")], [[0.5, 0.5, 0.5, 0.5]])
         # When
         hits = store.search([0.5, 0.5, 0.5, 0.5], k=5)
         # Then
         assert all(h.chunk_id != "__index_meta__" for h in hits)
-        assert store.count() == 1
+        assert store.chunk_count() == 1
 
     def test_upsert_length_mismatch_raises(self) -> None:
         """Given mismatched chunks and vectors, then ValueError is raised."""
         # Given
         store = _store()
-        store.ensure_collection("m", 4)
+        store.ensure_collection("m", 4, fingerprint="f1")
         # When / Then
         try:
             store.upsert(

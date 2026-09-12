@@ -7,7 +7,7 @@ from src.app.adapter import LocalRetriever
 from src.app.vector_store import QdrantVectorStore
 from src.embeddings.stub import StubEmbedder
 from src.schemas.containers import QdrantConfig
-from src.schemas.retrieval import Chunk, SearchHit
+from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
 
 
 class FakeStore:
@@ -19,9 +19,9 @@ class FakeStore:
         self.last_limit: int | None = None
 
     def ensure_collection(
-        self, model_id: str, dim: int, *, force: bool = False
-    ) -> None:
-        pass
+        self, model_id: str, dim: int, *, fingerprint: str, force: bool = False
+    ) -> bool:
+        return True
 
     def upsert(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
         pass
@@ -30,8 +30,17 @@ class FakeStore:
         self.last_limit = k
         return self._hits[:k]
 
-    def count(self) -> int:
+    def chunk_count(self) -> int:
         return len(self._hits)
+
+    def describe(self) -> CollectionInfo:
+        return CollectionInfo(
+            exists=True,
+            collection="fake",
+            model_id=None,
+            dim=None,
+            chunk_count=len(self._hits),
+        )
 
 
 class ExplodingStore(FakeStore):
@@ -247,7 +256,7 @@ class TestLocalRetrieverWithQdrant:
             for name, count in (("a", 3), ("b", 2))
             for index in range(count)
         ]
-        store.ensure_collection(embedder.model_id, embedder.dim)
+        store.ensure_collection(embedder.model_id, embedder.dim, fingerprint="test")
         store.upsert(chunks, embedder.embed_texts([chunk.text for chunk in chunks]))
         retriever = LocalRetriever(embedder=embedder, store=store, overfetch_factor=5)
         # When
