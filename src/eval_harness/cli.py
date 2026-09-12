@@ -104,8 +104,7 @@ def load_adapter(import_path: str) -> RetrieverAdapter:
         instance: object = constructor()
     except TypeError as exc:
         raise TypeError(
-            f"Could not instantiate adapter {import_path!r} "
-            f"(does it take a no-argument constructor?): {exc}"
+            f"Could not instantiate adapter {import_path!r} (does it take a no-argument constructor?): {exc}"
         ) from exc
 
     # Verify duck-typing.
@@ -210,6 +209,7 @@ def _category_means(
 
     means: dict[str, dict[str, float]] = {}
     all_values: list[float] = []
+    # Per category
     for category, values in per_category.items():
         means[category] = {
             "recall": sum(values) / len(values),
@@ -217,6 +217,7 @@ def _category_means(
         }
         all_values.extend(values)
     if all_values:
+        # Overall
         means[OVERALL_CATEGORY] = {
             "recall": sum(all_values) / len(all_values),
             "count": float(len(all_values)),
@@ -226,7 +227,7 @@ def _category_means(
 
 def _answerable_recalls(results: list[dict[str, Any]]) -> dict[str, float]:
     """Map query_id to recall@k for answerable, successful rows only."""
-    out: dict[str, float] = {}
+    out: dict[str, float] = {}  # {query_id: recall@k}
     for row in results:
         if row["recall_at_k"] is None:
             continue
@@ -281,7 +282,9 @@ def _significance(
     )
     if not significant:
         return None
-    return DiffFlagEnum.REGRESSED if delta < 0 else DiffFlagEnum.IMPROVED
+    if delta > 0:
+        return DiffFlagEnum.IMPROVED
+    return DiffFlagEnum.REGRESSED
 
 
 def _render_verbose_diff(
@@ -310,14 +313,12 @@ def _render_diff(
 ) -> bool:
     """Print the before/after comparison table; return True if any regression."""
     typer.echo(
-        f"diff {baseline_run['tag']} (#{baseline_run['id']}) -> "
-        f"{current_run['tag']} (#{current_run['id']})"
+        f"diff {baseline_run['tag']} (#{baseline_run['id']}) -> {current_run['tag']} (#{current_run['id']})"
     )
     for run in (baseline_run, current_run):
         if run["status"] != RunStatus.COMPLETE.value:
             typer.echo(
-                f"warning: run #{run['id']} ({run['tag']}) is {run['status']}, "
-                "not complete",
+                f"warning: run #{run['id']} ({run['tag']}) is {run['status']}, not complete",
                 err=True,
             )
     baseline_means, baseline_excluded = _category_means(baseline_rows)
