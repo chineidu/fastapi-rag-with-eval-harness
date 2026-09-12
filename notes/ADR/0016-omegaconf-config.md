@@ -17,8 +17,9 @@ db path, thresholds) that supports both a committed config file
 Use **OmegaConf** (structured configs, dataclass-based) with
 file → CLI merge order:
 
-1. Parse `.rag-eval.yaml` (default path: project root,
-   committed).
+1. Parse `.rag-eval.yaml` (default path: current working
+   directory, committed; `--config PATH` overrides the file
+   location).
 2. Apply CLI overrides (`--k 20 --concurrency 5`).
 3. CLI wins.
 

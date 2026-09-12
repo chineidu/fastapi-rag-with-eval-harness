@@ -22,6 +22,9 @@ DEFAULT_CORPUS_ROOTS: tuple[str, ...] = (
     "docs/fastapi/docs_src",
 )
 
+# Placeholder shown when collection metadata is missing.
+UNKNOWN_DISPLAY_VALUE: str = "unknown"
+
 
 @app.command()
 def build(
@@ -95,8 +98,8 @@ def inspect_collection(
     if not info.exists:
         typer.echo("  status:      not indexed")
         return
-    model_id = info.model_id if info.model_id is not None else "unknown"
-    dim = str(info.dim) if info.dim is not None else "unknown"
+    model_id = info.model_id if info.model_id is not None else UNKNOWN_DISPLAY_VALUE
+    dim = str(info.dim) if info.dim is not None else UNKNOWN_DISPLAY_VALUE
     typer.echo("  status:      indexed")
     typer.echo(f"  model_id:    {model_id}")
     typer.echo(f"  dim:         {dim}")

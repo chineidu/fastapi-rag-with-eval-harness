@@ -2,17 +2,19 @@
 
 <!-- TOC -->
 
-- [1. Quickstart](#1-quickstart)
-- [2. Data pipeline](#2-data-pipeline)
-- [3. Eval harness](#3-eval-harness)
-  - [3.1 Adapter contract](#31-adapter-contract)
-  - [3.2 Metrics](#32-metrics)
-- [4. Vector index](#4-vector-index)
-  - [4.1 Storage model](#41-storage-model)
-  - [4.2 The meta (sentinel) point](#42-the-meta-sentinel-point)
-  - [4.3 Corpus fingerprint](#43-corpus-fingerprint)
-- [5. Project layout](#5-project-layout)
-- [6. Development](#6-development)
+- [fastapi-rag-with-eval-harness](#fastapi-rag-with-eval-harness)
+  - [1. Quickstart](#1-quickstart)
+    - [Exit codes](#exit-codes)
+  - [2. Data pipeline](#2-data-pipeline)
+  - [3. Eval harness](#3-eval-harness)
+    - [3.1 Adapter contract](#31-adapter-contract)
+    - [3.2 Metrics](#32-metrics)
+  - [4. Vector index](#4-vector-index)
+    - [4.1 Storage model](#41-storage-model)
+    - [4.2 The meta (sentinel) point](#42-the-meta-sentinel-point)
+    - [4.3 Corpus fingerprint](#43-corpus-fingerprint)
+  - [5. Project layout](#5-project-layout)
+  - [6. Development](#6-development)
 
 <!-- /TOC -->
 
@@ -51,9 +53,11 @@ uv run rag-eval diff baseline chunk-512
 uv run rag-eval list --limit 20
 ```
 
-Exit codes for `run`: 0 complete, 1 partial (some queries failed), 2
-usage/config error. For `diff`: 0 no significant regression, 1 regressed
-beyond threshold, 2 usage/run-not-found error.
+### Exit codes
+
+For `run`: 0 complete, 1 partial (some queries failed), 2 usage/config error.
+
+For `diff`: 0 no significant regression, 1 regressed beyond threshold, 2 usage/run-not-found error.
 
 ## 2. Data pipeline
 
