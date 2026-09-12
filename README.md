@@ -7,8 +7,12 @@
 - [3. Eval harness](#3-eval-harness)
   - [3.1 Adapter contract](#31-adapter-contract)
   - [3.2 Metrics](#32-metrics)
-- [4. Project layout](#4-project-layout)
-- [5. Development](#5-development)
+- [4. Vector index](#4-vector-index)
+  - [4.1 Storage model](#41-storage-model)
+  - [4.2 The meta (sentinel) point](#42-the-meta-sentinel-point)
+  - [4.3 Corpus fingerprint](#43-corpus-fingerprint)
+- [5. Project layout](#5-project-layout)
+- [6. Development](#6-development)
 
 <!-- /TOC -->
 
@@ -142,14 +146,93 @@ diff:
 - `diff` flags a category when `|delta|` exceeds the absolute threshold or
   `|delta%|` exceeds the relative threshold.
 
-Full design rationale lives in `notes/architecture.md`.
+Full design rationale lives in `notes/ADR/`.
 
-## 4. Project layout
+## 4. Vector index
+
+The app side of the pipeline. `rag-index build` chunks the corpus, embeds
+each chunk, and stores the vectors in Qdrant; `rag-index inspect` reports
+what the collection holds. The eval harness reads this index through
+`LocalRetriever` (`src/app/adapter.py`).
+
+```bash
+uv run rag-index build          # defaults to both corpus roots; skips when unchanged
+uv run rag-index build --force  # drop and rebuild the collection
+uv run rag-index inspect
+```
+
+```text
+Collection fastapi_docs (qdrant)
+  status:      indexed
+  model_id:    BAAI/bge-small-en-v1.5
+  dim:         384
+  chunk_count: 1200
+```
+
+### 4.1 Storage model
+
+Qdrant stores **points**, the analogue of database rows: an `id`, a
+`vector`, and a `payload` (arbitrary JSON metadata). The index writes one
+point per chunk; its id is a deterministic UUID, its vector is the
+embedding, and its payload carries `chunk_id`, `doc_path`, `chunk_index`,
+and `text`.
+
+- **Collection** - the table of points, here `fastapi_docs`.
+- **Upsert** - insert-or-overwrite by id, the write primitive used by the
+  indexer.
+- **uuid5** - a deterministic UUID derived from a name string. Chunks are
+  stored under `uuid5(chunk_id)`, so re-indexing overwrites the same points
+  instead of duplicating them.
+
+### 4.2 The meta (sentinel) point
+
+One point in the collection is not a chunk. It carries the index
+bookkeeping:
+
+```json
+{
+  "is_meta": true,
+  "model_id": "BAAI/bge-small-en-v1.5",
+  "dim": 384,
+  "corpus_fingerprint": "9f3c..."
+}
+```
+
+A **sentinel** is a reserved marker meaning "not regular data." It exists
+because Qdrant has no collection-level metadata slot; storing it as a point
+means the index state travels with the data. Its vector is a throwaway
+`[0.0] * dim` (every point needs one) and its id is
+`uuid5("__index_meta__")`, so the next run can read it back. Search and the
+chunk count filter `is_meta == true`, so the sentinel never appears as a
+retrieval hit or inflates the count.
+
+`ensure_collection` reads the sentinel to decide reuse versus rebuild, and
+`rag-index inspect` reads it for the model and dimension.
+
+### 4.3 Corpus fingerprint
+
+The fingerprint answers one question: is this index the index of this
+exact corpus? It is a SHA-256 digest over the sorted chunk ids and the
+hash of each chunk's text. Because chunk ids encode `doc_path#index`, the
+digest covers the file set, the file contents, and the chunking parameters
+in one short string; sorting makes it independent of chunk order.
+
+- Match (and no `--force`) - the collection is reused and `build` skips
+  embedding and upsert, printing `Index up to date`.
+- Mismatch or `--force` - the collection is dropped and rebuilt, which
+  also clears stale points left by deleted or shrunk documents.
+
+Think of it as a cache key, `model_id + dim + corpus_fingerprint`, not a
+diff: it cannot tell you *what* changed. Design rationale in ADR-0023 (and
+ADR-0020 for the store itself).
+
+## 5. Project layout
 
 ```text
 .
 ├── src/
 │   ├── eval_harness/      # Copyable harness: cli, runner, metrics, store, loader, adapter, config
+│   ├── app/               # RAG side: chunker, indexer, Qdrant store, adapter, rag-index CLI
 │   ├── embeddings/        # AbstractEmbedder + local (fastembed) / api (OpenRouter) / stub
 │   ├── schemas/           # Pydantic models, harness dataclasses, StrEnum types
 │   ├── config/            # pydantic-settings (ENV/HOST/PORT + pipeline YAML in config.yaml)
@@ -159,12 +242,12 @@ Full design rationale lives in `notes/architecture.md`.
 ├── tests/                 # Mirrors src/, pytest with 85% coverage gate
 ├── data/                  # Eval JSONL files + gitignored .rag-eval/runs.db
 ├── docs/fastapi/          # FastAPI repo snapshot used as retrieval corpus
-├── notes/architecture.md  # Harness design reference
+├── notes/ADR/             # Architecture decision records
 ├── .rag-eval.yaml         # Harness defaults (adapter, k, db, diff thresholds)
 └── Makefile               # install / test / lint / format / typecheck / check
 ```
 
-## 5. Development
+## 6. Development
 
 ```bash
 make install       # uv sync

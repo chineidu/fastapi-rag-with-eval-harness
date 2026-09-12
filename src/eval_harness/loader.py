@@ -12,8 +12,8 @@ logger = create_logger(name=__name__)
 class GroundTruthLoader:
     """Load and validate a ground truth file.
 
-    Accepts either a JSON array (one object per query, as specified in
-    ``notes/architecture.md`` Sec 3.3) or JSONL (one object per line).
+    Accepts either a JSON array (legacy, one object per query) or JSONL
+    (one object per line, the format in ADR-0008).
     """
 
     @staticmethod
