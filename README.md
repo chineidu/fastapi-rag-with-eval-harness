@@ -9,6 +9,7 @@
   - [3. Eval harness](#3-eval-harness)
     - [3.1 Adapter contract](#31-adapter-contract)
     - [3.2 Metrics](#32-metrics)
+    - [3.3 How to read a run score](#33-how-to-read-a-run-score)
   - [4. Vector index](#4-vector-index)
     - [4.1 Storage model](#41-storage-model)
     - [4.2 The meta (sentinel) point](#42-the-meta-sentinel-point)
@@ -26,7 +27,7 @@ Two pipelines share one ground truth file:
 
 - **Labeling (one-time)** - semantic search narrows 615 corpus docs to top-30
   candidates per query, an LLM judge picks the relevant docs, output is
-  `data/ground_truth.jsonl` (70 queries: 39 answerable, 31 unanswerable).
+  `data/ground_truth.jsonl` (83 queries: 52 answerable, 31 unanswerable).
 - **Eval (every run)** - `rag-eval run` sends each query through a
   `RetrieverAdapter`, scores recall@k against ground truth, stores results in
   SQLite; `rag-eval diff` compares two runs.
@@ -149,6 +150,31 @@ diff:
   `CONCEPTUAL`) plus an `OVERALL` mean over answerable queries only.
 - `diff` flags a category when `|delta|` exceeds the absolute threshold or
   `|delta%|` exceeds the relative threshold.
+
+### 3.3 How to read a run score
+
+A row like `DIRECT_LOOKUP 24 0.706` is the plain mean of per-query
+`recall@k` over answerable queries only. Each query scores
+`|retrieved[:k] intersect relevant| / |relevant|`, so queries with several
+relevant docs contribute partial credit (run 1 baseline: 11 perfect 1.0,
+11 partial, 2 total misses).
+
+What you are assessing is a fixed system snapshot, not a trained model.
+Change `chunk size` or `chunker`, `embedder`, `overfetch factor`, or `k` and you
+have a new system for evaluation - the harness exists to diff those
+snapshots against each other.
+
+- Scoring is at doc level. Chunk quality only matters insofar as it gets
+  the parent doc into the fetched chunk pool.
+- Unanswerable queries are excluded from the means but stored in the DB
+  with recall 0.0, so a naive `AVG(recall)` over the table understates
+  the reported score.
+- Ground truth itself was built from top-30 semantic candidates in the
+  same embedding family, then LLM-judged. Docs dense retrieval could never
+  surface were never judged, which slightly favors dense retrieval.
+- One snapshot cannot attribute a score to one component, says nothing
+  about answer quality or faithfulness (generation is deferred), and
+  small categories (e.g. 17 multi-hop answerable) move a lot per query.
 
 Full design rationale lives in `notes/ADR/`.
 

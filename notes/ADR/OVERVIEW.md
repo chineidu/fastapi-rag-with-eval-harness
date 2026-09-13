@@ -1,6 +1,6 @@
 ---
-generated: 2026-09-12
-covers: 0001-0023
+generated: 2026-09-13
+covers: 0001-0024
 ---
 
 # Architecture overview
@@ -52,8 +52,9 @@ runner, classified retries, and SQLite persistence.
 The harness-to-RAG boundary is document-level: the adapter owns
 chunking and returns typed document hits; the harness owns timing.
 
-- `0004` RetrieverAdapter protocol (ratified): separate `retrieve()`
-  and `generate()` methods; the element shape is amended by 0019.
+- `0004` RetrieverAdapter protocol (ratified, amended by 0019):
+  separate `retrieve()` and `generate()` methods; the element shape is
+  amended by 0019.
 - `0012` Chunking is adapter-internal (ratified): the harness never
   sees chunks, so chunking experiments cannot invalidate ground truth.
 - `0019` RetrievedDocument element type (ratified, amends 0004):
@@ -62,15 +63,16 @@ chunking and returns typed document hits; the harness owns timing.
 
 ## Corpus and ground truth
 
-The eval data is a pinned corpus, real user questions, and LLM-judged
-labels over a pooled candidate set, all identified by file paths.
+The eval data is a pinned corpus, real user questions plus constructed
+multi-hop backfill, and LLM-judged labels over a pooled candidate set,
+all identified by file paths.
 
 - `0002` FastAPI v0.140.0 corpus (ratified): 615 files pinned at commit
   `255b912`; 154 English markdown pages and 461 Python examples, with
   translations excluded.
-- `0007` 70 evaluation queries (ratified): 40 GitHub discussion threads
-  and 30 StackOverflow threads, split 38/17/15 across the difficulty
-  categories.
+- `0007` 70 evaluation queries (ratified, amended by 0024): 40 GitHub
+  discussion threads and 30 StackOverflow threads, split 38/17/15
+  across the difficulty categories.
 - `0008` JSONL ground truth format (ratified): one JSON object per line
   for crash-safe incremental writes, resume, and per-record validation.
 - `0010` Sparse binary relevance via top-30 pooling (ratified): the LLM
@@ -81,6 +83,10 @@ labels over a pooled candidate set, all identified by file paths.
 - `0022` Document IDs are ROOT-relative (ratified): one ID space shared
   by index, adapter, and ground truth; fixed 45 markdown refs that
   previously could never match.
+- `0024` Constructed multi-hop backfill (ratified, amends 0007): 13
+  LLM-drafted, doc-pair-bounded MULTI_HOP queries (`constructed-mh-01`
+  to `13`, `source: constructed`) appended to ground truth (70 to 83
+  records), labeled through the same top-30 plus judge pipeline.
 
 ## Retriever pipeline
 

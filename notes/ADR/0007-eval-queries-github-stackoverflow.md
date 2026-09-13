@@ -2,6 +2,7 @@
 status: ratified
 date: 2026-08-02
 deciders: project owner
+amended_by: 0024-constructed-multi-hop-backfill
 ---
 
 # 70 evaluation queries from GitHub discussions and StackOverflow
