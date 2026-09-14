@@ -1,7 +1,9 @@
 """Baseline retrieval adapter: embed a query, search chunks, dedupe to documents."""
 
 import logging
+from pathlib import Path
 
+from src.app.hybrid import TantivyIndex, rrf_fuse
 from src.app.vector_store import VectorStore, get_vector_store
 from src.config import load_app_config
 from src.embeddings import AbstractEmbedder, get_embedder
@@ -13,13 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class LocalRetriever:
-    """Baseline retriever adapter over the local vector index.
+    """Retriever adapter over the local dense and lexical indexes.
 
-    The harness asks for documents while the index stores chunks, so the
-    retriever over-fetches ``k * overfetch_factor`` chunks and keeps the best
-    hit per document (ADR-0021). The embedder and vector store are resolved
-    from the shared app config, so query vectors always match the indexed
-    vectors.
+    The harness asks for documents while the indexes store chunks, so the
+    retriever over-fetches ``k * overfetch_factor`` dense chunks and keeps
+    the best hit per document (ADR-0021). When hybrid retrieval is enabled,
+    ``sparse_k`` BM25 chunk hits from the Tantivy index are fused with the
+    dense hits via RRF (``rrf_k``) before dedupe. The embedder and vector
+    store are resolved from the shared app config, so query vectors always
+    match the indexed vectors.
     """
 
     def __init__(
@@ -29,6 +33,7 @@ class LocalRetriever:
         *,
         config: AppConfig | None = None,
         overfetch_factor: int | None = None,
+        lexical: TantivyIndex | None = None,
     ) -> None:
         """Configure the retriever.
 
@@ -43,6 +48,10 @@ class LocalRetriever:
         overfetch_factor : int | None
             Chunk-window multiplier. Defaults to
             ``config.retriever_config.overfetch_factor``.
+        lexical : TantivyIndex | None
+            Injectable lexical index (tests). Built from
+            ``config.retriever_config.tantivy_index_dir`` when ``None`` and
+            hybrid retrieval is enabled.
 
         Raises
         ------
@@ -63,6 +72,17 @@ class LocalRetriever:
         self._overfetch_factor = resolved_factor
         self._chunk_size = cfg.indexer_config.chunk_size
         self._overlap = cfg.indexer_config.overlap
+        self._hybrid_enabled = cfg.retriever_config.hybrid_enabled
+        self._sparse_k = cfg.retriever_config.sparse_k
+        self._rrf_k = cfg.retriever_config.rrf_k
+        self._dense_weight = cfg.retriever_config.dense_weight
+        self._sparse_weight = cfg.retriever_config.sparse_weight
+        if lexical is not None:
+            self._lexical = lexical
+        elif self._hybrid_enabled:
+            self._lexical = TantivyIndex(Path(cfg.retriever_config.tantivy_index_dir))
+        else:
+            self._lexical = None
 
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
         """Return the top-k documents for a query.
@@ -91,14 +111,32 @@ class LocalRetriever:
         vector: list[float] = self._embedder.embed_texts([query])[0]
         # Over-fetch chunks so dedupe can still fill k document slots (ADR-0021).
         limit: int = k * self._overfetch_factor
-        hits: list[SearchHit] = self._store.search(vector, limit)
+        dense_hits: list[SearchHit] = self._store.search(vector, limit)
         # Rank by score so the first hit per document is its best chunk,
         # regardless of the order the backend returned.
-        hits = sorted(hits, key=lambda hit: hit.score, reverse=True)
+        dense_hits = sorted(dense_hits, key=lambda hit: hit.score, reverse=True)
+        sparse_fetched = 0
+        # Fuse BM25 candidates when hybrid retrieval is enabled.
+        if self._hybrid_enabled and self._lexical is not None:
+            sparse_hits: list[SearchHit] = self._lexical.search(query, self._sparse_k)
+            sparse_fetched = len(sparse_hits)
+            fused_hits: list[SearchHit] = rrf_fuse(
+                dense_hits,
+                sparse_hits,
+                rrf_k=self._rrf_k,
+                dense_weight=self._dense_weight,
+                sparse_weight=self._sparse_weight,
+            )
+        else:
+            if self._hybrid_enabled:
+                logger.warning(
+                    "Hybrid enabled but no lexical index; using dense hits only"
+                )
+            fused_hits = dense_hits
         # Keep the best (first) hit per document, preserving score order.
         documents: list[RetrievedDocument] = []
         seen: set[str] = set()
-        for hit in hits:
+        for hit in fused_hits:
             if hit.doc_path in seen:
                 continue
             seen.add(hit.doc_path)
@@ -111,16 +149,22 @@ class LocalRetriever:
             "model_id": self._embedder.model_id,
             "overfetch_factor": self._overfetch_factor,
             "chunk_limit": limit,
-            "chunks_fetched": len(hits),
+            "chunks_fetched": len(fused_hits),
             "docs_returned": len(documents),
             "k": k,
             "chunk_size": self._chunk_size,
             "overlap": self._overlap,
+            "hybrid_enabled": self._hybrid_enabled,
+            "sparse_k": self._sparse_k,
+            "rrf_k": self._rrf_k,
+            "dense_weight": self._dense_weight,
+            "sparse_weight": self._sparse_weight,
+            "sparse_fetched": sparse_fetched,
         }
         logger.debug(
             "Retrieved %d docs from %d chunks for k=%d",
             len(documents),
-            len(hits),
+            len(fused_hits),
             k,
         )
         return RetrievalResult(documents=documents, metadata=metadata)

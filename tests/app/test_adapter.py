@@ -1,13 +1,35 @@
 """Tests for LocalRetriever chunk-to-document deduplication (ADR-0021)."""
 
+from types import SimpleNamespace
+from typing import cast
+
 import pytest
 from qdrant_client import QdrantClient
 
 from src.app.adapter import LocalRetriever
+from src.app.hybrid import TantivyIndex
 from src.app.vector_store import QdrantVectorStore
 from src.embeddings.stub import StubEmbedder
 from src.schemas.containers import QdrantConfig
+from src.schemas.models import AppConfig
 from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
+
+
+def _test_config(*, hybrid_enabled: bool = False) -> SimpleNamespace:
+    """App config stub with hybrid retrieval disabled by default."""
+    return SimpleNamespace(
+        embeddings_config=SimpleNamespace(),
+        indexer_config=SimpleNamespace(chunk_size=2000, overlap=0),
+        retriever_config=SimpleNamespace(
+            overfetch_factor=5,
+            hybrid_enabled=hybrid_enabled,
+            sparse_k=50,
+            rrf_k=60,
+            dense_weight=1.0,
+            sparse_weight=1.0,
+            tantivy_index_dir="",
+        ),
+    )
 
 
 class FakeStore:
@@ -50,6 +72,18 @@ class ExplodingStore(FakeStore):
         raise ConnectionError("qdrant unavailable")
 
 
+class FakeLexical:
+    """TantivyIndex stub returning a fixed sparse hit list."""
+
+    def __init__(self, hits: list[SearchHit]) -> None:
+        """Store the fixed hit list."""
+        self._hits = hits
+
+    def search(self, query: str, k: int) -> list[SearchHit]:
+        """Return the fixed hits, capped at k."""
+        return self._hits[:k]
+
+
 def _hit(doc_path: str, score: float, chunk_index: int = 0) -> SearchHit:
     """Build one SearchHit for the given document and score."""
     return SearchHit(
@@ -63,7 +97,12 @@ def _hit(doc_path: str, score: float, chunk_index: int = 0) -> SearchHit:
 
 def _retriever(store: FakeStore, factor: int) -> LocalRetriever:
     """Build a LocalRetriever with injected fakes."""
-    return LocalRetriever(embedder=StubEmbedder(), store=store, overfetch_factor=factor)
+    return LocalRetriever(
+        embedder=StubEmbedder(),
+        store=store,
+        overfetch_factor=factor,
+        config=cast(AppConfig, _test_config()),
+    )
 
 
 class TestLocalRetriever:
@@ -226,6 +265,50 @@ class TestLocalRetriever:
         with pytest.raises(ConnectionError):
             retriever.retrieve("query", k=10)
 
+    def test_hybrid_fuses_sparse_hits(self) -> None:
+        """Given hybrid enabled, then sparse-only docs enter the result."""
+        # Given
+        store = FakeStore([_hit("docs/a.md", 0.9, 0)])
+        lexical = cast(TantivyIndex, FakeLexical([_hit("docs/b.md", 8.0, 0)]))
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(hybrid_enabled=True)),
+            lexical=lexical,
+        )
+        # When
+        result = retriever.retrieve("query", k=10)
+        # Then
+        assert {doc.doc_path for doc in result.documents} == {
+            "docs/a.md",
+            "docs/b.md",
+        }
+        assert result.metadata["hybrid_enabled"] is True
+        assert result.metadata["sparse_fetched"] == 1
+
+    def test_hybrid_without_lexical_warns_and_uses_dense(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Hybrid without an index warns and falls back to dense hits."""
+        # Given (__init__ auto-builds when enabled, so force the missing case)
+        store = FakeStore([_hit("docs/a.md", 0.9, 0)])
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(hybrid_enabled=True)),
+            lexical=None,
+        )
+        retriever._lexical = None
+        # When
+        with caplog.at_level("WARNING", logger="src.app.adapter"):
+            result = retriever.retrieve("query", k=10)
+        # Then
+        assert [doc.doc_path for doc in result.documents] == ["docs/a.md"]
+        assert result.metadata["sparse_fetched"] == 0
+        assert any("lexical index" in record.message for record in caplog.records)
+
     def test_generate_is_deferred(self) -> None:
         """Generation is out of scope until ADR-0004's deferred phase."""
         # Given
@@ -258,7 +341,12 @@ class TestLocalRetrieverWithQdrant:
         ]
         store.ensure_collection(embedder.model_id, embedder.dim, fingerprint="test")
         store.upsert(chunks, embedder.embed_texts([chunk.text for chunk in chunks]))
-        retriever = LocalRetriever(embedder=embedder, store=store, overfetch_factor=5)
+        retriever = LocalRetriever(
+            embedder=embedder,
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config()),
+        )
         # When
         result = retriever.retrieve("content", k=10)
         # Then

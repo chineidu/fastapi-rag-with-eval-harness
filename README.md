@@ -10,18 +10,20 @@
     - [3.1 Adapter contract](#31-adapter-contract)
     - [3.2 Metrics](#32-metrics)
     - [3.3 How to read a run score](#33-how-to-read-a-run-score)
-  - [4. Vector index](#4-vector-index)
+  - [4. Indexes](#4-indexes)
     - [4.1 Storage model](#41-storage-model)
     - [4.2 The meta (sentinel) point](#42-the-meta-sentinel-point)
     - [4.3 Corpus fingerprint](#43-corpus-fingerprint)
+    - [4.4 Hybrid retrieval](#44-hybrid-retrieval)
   - [5. Project layout](#5-project-layout)
   - [6. Development](#6-development)
 
 <!-- /TOC -->
 
 Retrieval eval harness for RAG over the FastAPI docs. It quantifies the
-before/after impact of pipeline changes (chunking, embeddings, top-k) with
-reproducible recall@k scores, per-category breakdowns, and regression diffs.
+before/after impact of pipeline changes (chunking, embeddings, hybrid
+retrieval, top-k) with reproducible recall@k scores, per-category
+breakdowns, and regression diffs.
 
 Two pipelines share one ground truth file:
 
@@ -29,8 +31,9 @@ Two pipelines share one ground truth file:
   candidates per query, an LLM judge picks the relevant docs, output is
   `data/ground_truth.jsonl` (83 queries: 52 answerable, 31 unanswerable).
 - **Eval (every run)** - `rag-eval run` sends each query through a
-  `RetrieverAdapter`, scores recall@k against ground truth, stores results in
-  SQLite; `rag-eval diff` compares two runs.
+  `RetrieverAdapter` (hybrid dense-plus-BM25 retrieval in this repo), scores
+  recall@k against ground truth, stores results in SQLite; `rag-eval diff`
+  compares two runs.
 
 ## 1. Quickstart
 
@@ -129,7 +132,7 @@ Point the harness at your class with an import path:
 
 ```yaml
 # .rag-eval.yaml (committed; CLI flags override every key)
-adapter: "app.adapter:Retriever"
+adapter: "src.app.adapter:LocalRetriever"
 ground_truth: data/ground_truth.jsonl
 db: data/.rag-eval/runs.db
 defaults:
@@ -160,9 +163,9 @@ relevant docs contribute partial credit (run 1 baseline: 11 perfect 1.0,
 11 partial, 2 total misses).
 
 What you are assessing is a fixed system snapshot, not a trained model.
-Change `chunk size` or `chunker`, `embedder`, `overfetch factor`, or `k` and you
-have a new system for evaluation - the harness exists to diff those
-snapshots against each other.
+Change `chunk size` or `chunker`, `embedder`, `overfetch factor`, the
+`sparse_k`/fusion weights, or `k` and you have a new system for evaluation -
+the harness exists to diff those snapshots against each other.
 
 - Scoring is at doc level. Chunk quality only matters insofar as it gets
   the parent doc into the fetched chunk pool.
@@ -178,17 +181,18 @@ snapshots against each other.
 
 Full design rationale lives in `notes/ADR/`.
 
-## 4. Vector index
+## 4. Indexes
 
 The app side of the pipeline. `rag-index build` chunks the corpus, embeds
-each chunk, and stores the vectors in Qdrant; `rag-index inspect` reports
-what the collection holds. The eval harness reads this index through
-`LocalRetriever` (`src/app/adapter.py`).
+each chunk into Qdrant, and (with hybrid retrieval enabled) also writes the
+same chunks to a persisted tantivy BM25 index. `rag-index inspect` reports
+what the vector collection holds. The eval harness reads both indexes
+through `LocalRetriever` (`src/app/adapter.py`).
 
 ```bash
-uv run rag-index build          # defaults to both corpus roots; skips when unchanged
-uv run rag-index build --force  # drop and rebuild the collection
-uv run rag-index inspect
+uv run rag-index build          # both corpus roots; dense + lexical; skips when unchanged
+uv run rag-index build --force  # drop and rebuild the indexes
+uv run rag-index inspect        # vector collection metadata
 ```
 
 ```text
@@ -256,13 +260,39 @@ Think of it as a cache key, `model_id + dim + corpus_fingerprint`, not a
 diff: it cannot tell you *what* changed. Design rationale in ADR-0023 (and
 ADR-0020 for the store itself).
 
+### 4.4 Hybrid retrieval
+
+Dense search misses exact tokens (`OAuth2PasswordRequestForm`, `422`, file
+paths), so a persisted tantivy BM25 index is built alongside Qdrant from the
+same chunks under the same fingerprint, at `data/.rag-index/tantivy`
+(gitignored, like `data/.rag-eval/` - both are build artifacts, regenerated
+by `rag-index build`). Design rationale in ADR-0025.
+
+At query time `LocalRetriever` fetches `k * overfetch_factor` dense chunks
+and `sparse_k` BM25 chunks, fuses them with Reciprocal Rank Fusion (RRF),
+then dedupes to the best chunk per document (ADR-0021):
+
+- RRF scores each chunk as `weight / (rrf_k + rank)`, summed over the lists
+  it appears in. Only ranks matter, so cosine and BM25 scores need no
+  calibration, and chunks missing from one list simply get no contribution
+  from it.
+- Tuned defaults in `src/config/config.yaml` -> `retriever_config`:
+  `sparse_k: 50`, `rrf_k: 30`, `dense_weight: 0.75`, `sparse_weight: 0.25`
+  (weights are normalized to sum to 1 inside the fusion).
+- `hybrid_enabled: false` restores the dense-only path, which is what the
+  committed `baseline` eval run measures - the reference for `rag-eval diff`.
+
+Measured in this repo: OVERALL recall@10 0.594 vs 0.592 dense-only, driven
+by MULTI_HOP +19.8% (+0.096) against DIRECT_LOOKUP and CONCEPTUAL drops
+(see `notes.md` for the tuning sweep).
+
 ## 5. Project layout
 
 ```text
 .
 ├── src/
 │   ├── eval_harness/      # Copyable harness: cli, runner, metrics, store, loader, adapter, config
-│   ├── app/               # RAG side: chunker, indexer, Qdrant store, adapter, rag-index CLI
+│   ├── app/               # RAG side: chunker, indexer, Qdrant store, hybrid BM25+RRF, adapter, CLI
 │   ├── embeddings/        # AbstractEmbedder + local (fastembed) / api (OpenRouter) / stub
 │   ├── schemas/           # Pydantic models, harness dataclasses, StrEnum types
 │   ├── config/            # pydantic-settings (ENV/HOST/PORT + pipeline YAML in config.yaml)
@@ -270,7 +300,7 @@ ADR-0020 for the store itself).
 │   └── utils/             # JSONL io, HTML strip, text cleaning
 ├── scripts/               # One-off pipeline CLIs: fetch, normalize, classify, label
 ├── tests/                 # Mirrors src/, pytest with 85% coverage gate
-├── data/                  # Eval JSONL files + gitignored .rag-eval/runs.db
+├── data/                  # Eval JSONL files + gitignored .rag-eval/ and .rag-index/
 ├── docs/fastapi/          # FastAPI repo snapshot used as retrieval corpus
 ├── notes/ADR/             # Architecture decision records
 ├── .rag-eval.yaml         # Harness defaults (adapter, k, db, diff thresholds)

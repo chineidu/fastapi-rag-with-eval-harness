@@ -222,3 +222,4 @@ __marimo__/
 **/**/note.*
 **/**/brainstorm/
 data/.rag-eval/
+data/.rag-index/

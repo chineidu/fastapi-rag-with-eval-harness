@@ -261,6 +261,42 @@ class RetrieverConfig:
             )
         },
     )
+    hybrid_enabled: bool = field(
+        default=False,
+        metadata={"description": "Fuse Qdrant dense hits with tantivy BM25 via RRF."},
+    )
+    sparse_k: int = field(
+        default=50,
+        metadata={"description": "BM25 candidate window per query."},
+    )
+    rrf_k: int = field(
+        default=60,
+        metadata={"description": "RRF smoothing constant for dense/sparse fusion."},
+    )
+    dense_weight: float = field(
+        default=1.0,
+        metadata={
+            "description": (
+                "RRF weight on dense rank contributions, normalized with "
+                "sparse_weight to sum to 1 so only the ratio matters "
+                "(must be positive)."
+            )
+        },
+    )
+    sparse_weight: float = field(
+        default=1.0,
+        metadata={
+            "description": (
+                "RRF weight on sparse rank contributions, normalized with "
+                "dense_weight to sum to 1 so only the ratio matters "
+                "(must be positive)."
+            )
+        },
+    )
+    tantivy_index_dir: str = field(
+        default="data/.rag-index/tantivy",
+        metadata={"description": "Persisted tantivy index directory."},
+    )
 
 
 @dataclass(slots=True, kw_only=True)

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.app.chunker import DEFAULT_CHUNK_SIZE, chunk_directory
+from src.app.hybrid import TantivyIndex
 from src.app.vector_store import VectorStore
 from src.embeddings.base import AbstractEmbedder
 from src.schemas.retrieval import Chunk, IndexReport
@@ -41,11 +42,11 @@ def _corpus_fingerprint(chunks: Sequence[Chunk]) -> str:
 
 
 class Indexer:
-    """Build a vector index over a corpus directory.
+    """Build vector and optional lexical indexes over one or more corpus directories.
 
-    Orchestrates chunking, embedding, and upsert. The vector store owns
-    idempotency (reuse vs rebuild) via a corpus fingerprint, so repeated
-    ``build()`` calls on an unchanged corpus skip embedding and upsert.
+    Orchestrates chunking, embedding, and upsert. The vector store decides
+    reuse vs rebuild based on a corpus fingerprint, so repeated ``build()``
+    calls on an unchanged corpus skip embedding and upsert.
     """
 
     def __init__(
@@ -55,6 +56,7 @@ class Indexer:
         *,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         overlap: int = 0,
+        lexical: TantivyIndex | None = None,
     ) -> None:
         """Configure the indexer.
 
@@ -68,12 +70,15 @@ class Indexer:
             Characters per chunk (forwarded to the chunker).
         overlap : int
             Characters reused between consecutive chunks.
+        lexical : TantivyIndex | None
+            Lexical index rebuilt alongside the vector store when set.
 
         """
         self._embedder = embedder
         self._store = store
         self._chunk_size = chunk_size
         self._overlap = overlap
+        self._lexical = lexical
 
     def build(
         self, corpus_roots: Path | Sequence[Path], *, force: bool = False
@@ -142,5 +147,7 @@ class Indexer:
         texts: list[str] = [chunk.text for chunk in chunks]
         vectors: list[list[float]] = self._embedder.embed_texts(texts)
         self._store.upsert(chunks, vectors)
+        if self._lexical is not None:
+            self._lexical.build(chunks)
         logger.info("Indexed %d chunks (model=%s, dim=%d)", len(chunks), model_id, dim)
         return IndexReport(indexed_chunks=len(chunks), skipped=False)

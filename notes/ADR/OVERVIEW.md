@@ -1,6 +1,6 @@
 ---
-generated: 2026-09-13
-covers: 0001-0024
+generated: 2026-09-14
+covers: 0001-0025
 ---
 
 # Architecture overview
@@ -8,7 +8,9 @@ covers: 0001-0024
 A retrieval evaluation harness for RAG systems, developed against a
 pinned FastAPI documentation corpus. A portable harness measures
 document-level retrieval quality, and one project-specific adapter
-connects it to the baseline retriever in this repo.
+connects it to the retriever in this repo, now running hybrid
+lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
+over the original dense baseline.
 
 ## Evaluation methodology
 
@@ -90,9 +92,9 @@ all identified by file paths.
 
 ## Retriever pipeline
 
-The RAG side under test is a baseline: naive chunking, a pluggable
-vector store, document-level over-fetch on retrieval, and
-fingerprint-gated index rebuilds.
+The RAG side under test: naive chunking, a pluggable vector store,
+document-level over-fetch on retrieval, and fingerprint-gated index
+rebuilds, plus hybrid lexical search fused with dense.
 
 - `0018` Naive fixed-size chunker (ratified): 2000-character chunks
   with sliding-window overlap; deterministic and dependency-free, but
@@ -108,6 +110,19 @@ fingerprint-gated index rebuilds.
   and `inspect` subcommands; a corpus fingerprint in the meta point
   lets an unchanged corpus skip embed and upsert, while a mismatch or
   `--force` rebuilds and clears stale points.
+
+## Hybrid retrieval
+
+A persisted lexical index runs alongside dense search, and the two are
+fused before dedupe to recover exact-token matches the baseline misses.
+
+- `0025` Hybrid search with tantivy BM25 and RRF (ratified): a
+  persisted tantivy index built from the same chunks under one corpus
+  fingerprint; query-time RRF fusion of dense and sparse chunk hits
+  (`sparse_k = 50`, `rrf_k = 30`, dense:sparse ratio `0.75 : 0.25`
+  normalized in `rrf_fuse`); hybrid is the active retriever
+  (`hybrid_enabled: true`) with the dense-only path kept as the diff
+  baseline; distribution across replicas deferred to 0026.
 
 ## CLI and configuration
 

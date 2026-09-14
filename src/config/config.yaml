@@ -85,3 +85,9 @@ config:
 
   retriever_config:
     overfetch_factor: 5
+    hybrid_enabled: true
+    sparse_k: 50
+    rrf_k: 30
+    dense_weight: 0.75
+    sparse_weight: 0.25
+    tantivy_index_dir: "data/.rag-index/tantivy"

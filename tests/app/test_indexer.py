@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from src.app.hybrid import TantivyIndex
 from src.app.indexer import Indexer, _corpus_fingerprint
 from src.embeddings.stub import StubEmbedder
 from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
@@ -190,6 +191,37 @@ class TestIndexer:
         # When / Then
         with pytest.raises(TypeError, match="str"):
             indexer.build(cast("Path | Sequence[Path]", str(tmp_path)))
+
+    def test_build_rebuilds_lexical_index(self, tmp_path: Path) -> None:
+        """Given a lexical index, then build forwards chunks to it."""
+        # Given
+        doc = tmp_path / "a.md"
+        doc.write_text("FastAPI is a web framework. " * 200, encoding="utf-8")
+        store = FakeVectorStore()
+
+        class FakeLexical:
+            """Record chunks passed to the lexical build."""
+
+            def __init__(self) -> None:
+                """Track received chunks."""
+                self.built: list[Chunk] = []
+
+            def build(self, chunks: list[Chunk]) -> None:
+                """Record the chunks."""
+                self.built = chunks
+
+        lexical = FakeLexical()
+        indexer = Indexer(
+            StubEmbedder(dim=8),
+            store,
+            chunk_size=200,
+            lexical=cast(TantivyIndex, lexical),
+        )
+        # When
+        report = indexer.build(tmp_path)
+        # Then
+        assert report.skipped is False
+        assert len(lexical.built) == report.indexed_chunks
 
 
 class TestCorpusFingerprint:

@@ -1,10 +1,12 @@
 """Command-line interface for building and inspecting the document index (``rag-index``)."""
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from src import ROOT
+from src.app.hybrid import TantivyIndex
 from src.app.indexer import Indexer
 from src.app.vector_store import get_vector_store
 from src.config import load_app_config
@@ -49,11 +51,19 @@ def build(
     cfg = load_app_config(config_path or None)
     embedder = get_embedder(cfg.embeddings_config)
     store = get_vector_store(cfg.indexer_config)
+    # Build the lexical index alongside the vector store when hybrid is on.
+    retriever_cfg = getattr(cfg, "retriever_config", None)
+    lexical = (
+        TantivyIndex(Path(retriever_cfg.tantivy_index_dir))
+        if retriever_cfg is not None and retriever_cfg.hybrid_enabled
+        else None
+    )
     indexer = Indexer(
         embedder,
         store,
         chunk_size=cfg.indexer_config.chunk_size,
         overlap=cfg.indexer_config.overlap,
+        lexical=lexical,
     )
     # Reject empty path entries, which would resolve to ROOT itself.
     requested = corpus or list(DEFAULT_CORPUS_ROOTS)
