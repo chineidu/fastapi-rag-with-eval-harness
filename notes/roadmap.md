@@ -49,7 +49,7 @@ Depends on slice 2. No distribution dependency for local/dev use.
 
 ## Slice 4 - Index distribution (deferred, deploy-time)
 
-Deferred to ADR 0026 (draft as `proposed` first). Full workflow draft
+Deferred to a future ADR (draft as `proposed` first). Full workflow draft
 in `notes.md` -> "Hybrid index workflow - option 2".
 
 Shape: CI builds image v123 once; a one-off job builds the Qdrant

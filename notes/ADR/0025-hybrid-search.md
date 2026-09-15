@@ -57,4 +57,4 @@ stemming plus fielded and phrase queries; embedded library with no
 extra service; proven Quickwit core with Python bindings.
 
 RRF needs no score calibration between dense cosine and BM25.
-Distribution (S3, manifest, versioning) is deferred to 0026.
+Distribution (S3, manifest, versioning) is deferred to a future ADR.

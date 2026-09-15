@@ -4,6 +4,7 @@ import json
 import sqlite3
 import threading
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Self
 
@@ -42,6 +43,11 @@ CREATE TABLE IF NOT EXISTS query_results (
 CREATE INDEX IF NOT EXISTS idx_query_results_run_query
     ON query_results(run_id, query_id);
 """
+
+
+def _utc_now() -> datetime:
+    """Return the current UTC time, patchable in tests."""
+    return datetime.now(tz=UTC)
 
 
 class ResultStore:
@@ -120,6 +126,42 @@ class ResultStore:
             raise RuntimeError("Failed to create run: no row id returned")
         logger.info("Created run %s with tag %r", last_id, tag)
         return last_id
+
+    def unique_tag(self, tag: str) -> str:
+        """Return ``tag`` if unused, else append a UTC ``-HHMMSS`` suffix.
+
+        Suffixing applies only on collision, so the first run under a
+        tag keeps the plain name. Same-second collisions append ``-2``,
+        ``-3``, and so on until the tag is free.
+
+        Parameters
+        ----------
+        tag : str
+            Requested run label.
+
+        Returns
+        -------
+        str
+            A tag that no existing run uses yet.
+
+        """
+        with self._lock:
+            if not self._tag_taken(tag):
+                return tag
+            stamp = _utc_now().strftime("%H%M%S")
+            candidate = f"{tag}-{stamp}"
+            bump = 2
+            while self._tag_taken(candidate):
+                candidate = f"{tag}-{stamp}-{bump}"
+                bump += 1
+            return candidate
+
+    def _tag_taken(self, tag: str) -> bool:
+        """Return whether a run already uses this exact tag (caller locks)."""
+        row = self._conn.execute(
+            "SELECT 1 FROM runs WHERE tag = ? LIMIT 1;", (tag,)
+        ).fetchone()
+        return row is not None
 
     def save_result(
         self,

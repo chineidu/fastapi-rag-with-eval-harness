@@ -1,6 +1,7 @@
 """Tests for the eval_harness.cli module."""
 
 import json
+import re
 import sys
 import types
 from collections.abc import Sequence
@@ -294,6 +295,43 @@ class TestRunCommand:
         with ResultStore(db) as store:
             runs = store.list_runs()
         assert runs[0]["tag"].startswith("auto-")
+
+    def test_run_duplicate_tag_gets_suffix(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given the same --tag twice, then the second run gets a suffix."""
+        # Given
+        gt = _write_ground_truth(tmp_path, [_answerable_record()])
+        monkeypatch.setattr(
+            "src.eval_harness.cli.load_adapter", lambda path: StubAdapter()
+        )
+        db = tmp_path / "runs.db"
+        args = [
+            "run",
+            "--adapter",
+            "stub:x",
+            "--ground-truth",
+            str(gt),
+            "--db",
+            str(db),
+            "--tag",
+            "baseline",
+            "--concurrency",
+            "1",
+        ]
+
+        # When
+        first = RUNNER.invoke(app, args)
+        second = RUNNER.invoke(app, args)
+
+        # Then
+        assert first.exit_code == 0
+        assert second.exit_code == 0
+        with ResultStore(db) as store:
+            tags = sorted(run["tag"] for run in store.list_runs())
+        assert len(tags) == 2
+        assert tags[0] == "baseline"
+        assert re.fullmatch(r"baseline-\d{6}(-2)?", tags[1])
 
     def test_run_missing_adapter_exits_two(self, tmp_path: Path) -> None:
         """Given no adapter configured, then exit code is 2."""

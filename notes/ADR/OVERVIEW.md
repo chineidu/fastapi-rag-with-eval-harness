@@ -1,6 +1,6 @@
 ---
-generated: 2026-09-14
-covers: 0001-0025
+generated: 2026-09-15
+covers: 0001-0026
 ---
 
 # Architecture overview
@@ -39,15 +39,19 @@ runner, classified retries, and SQLite persistence.
 - `0005` ThreadPoolExecutor with bounded concurrency (ratified):
   default pool of 3, configurable; the harness times each adapter call
   with `time.monotonic()`.
-- `0006` SQLite run history (ratified): runs and per-query results in
-  one database; tags are non-unique, so repeated configs can be
-  compared under one tag.
+- `0006` SQLite run history (ratified, amended by 0026): runs and
+  per-query results in one database; tags describe the experiment and
+  are made unique per run by 0026.
 - `0013` Harness internal module split (ratified): EvalRunner,
   MetricsCalculator, ResultStore, and GroundTruthLoader, plus adapter,
   config, and cli modules.
 - `0014` Error classification with backoff (ratified): recoverable
   errors retry twice with exponential backoff; fatal errors are logged,
   skipped, and mark the run partial.
+- `0026` Unique run tags with timestamp suffixes (proposed, amends
+  0006): a colliding tag gets a UTC `-HHMMSS` suffix, with `-2`, `-3`,
+  ... on same-second collisions; the first run under a tag keeps the
+  plain name.
 
 ## Adapter contract
 
@@ -122,7 +126,7 @@ fused before dedupe to recover exact-token matches the baseline misses.
   (`sparse_k = 50`, `rrf_k = 30`, dense:sparse ratio `0.75 : 0.25`
   normalized in `rrf_fuse`); hybrid is the active retriever
   (`hybrid_enabled: true`) with the dense-only path kept as the diff
-  baseline; distribution across replicas deferred to 0026.
+  baseline; distribution across replicas deferred to a future ADR.
 
 ## CLI and configuration
 

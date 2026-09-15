@@ -2,6 +2,7 @@
 status: ratified
 date: 2026-08-02
 deciders: project owner
+amended_by: 0026-unique-run-tags
 ---
 
 # SQLite for run history with non-unique tags

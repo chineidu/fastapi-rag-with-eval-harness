@@ -425,6 +425,7 @@ def run(
     if not tag:
         tag = f"auto-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}"
     with ResultStore(cfg.db) as store:
+        tag = store.unique_tag(tag)
         eval_runner = EvalRunner(
             retriever,
             store,

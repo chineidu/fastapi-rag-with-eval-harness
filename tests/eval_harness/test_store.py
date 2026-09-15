@@ -1,7 +1,9 @@
 """Tests for the eval_harness.store module."""
 
 import json
+import re
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 
@@ -122,6 +124,73 @@ class TestResultStoreCreateRun:
 
         # Then
         assert id2 > id1
+        store.close()
+
+
+class TestResultStoreUniqueTag:
+    """Tests for ResultStore.unique_tag method."""
+
+    def test_free_tag_is_unchanged(self, tmp_path) -> None:
+        """Given an unused tag, then it is returned unchanged."""
+        # Given
+        store = ResultStore(tmp_path / "test.db")
+        store.create_run("other")
+
+        # When
+        tag = store.unique_tag("baseline")
+
+        # Then
+        assert tag == "baseline"
+        store.close()
+
+    def test_taken_tag_gets_timestamp_suffix(self, tmp_path) -> None:
+        """Given a used tag, then a UTC -HHMMSS suffix is appended."""
+        # Given
+        store = ResultStore(tmp_path / "test.db")
+        store.create_run("baseline")
+
+        # When
+        tag = store.unique_tag("baseline")
+
+        # Then
+        assert re.fullmatch(r"baseline-\d{6}", tag)
+        store.close()
+
+    def test_same_second_collision_appends_counter(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given the suffixed tag is taken, then -2 is appended."""
+        # Given
+        store = ResultStore(tmp_path / "test.db")
+        store.create_run("baseline")
+        monkeypatch.setattr(
+            "src.eval_harness.store._utc_now",
+            lambda: datetime(2026, 9, 15, 12, 30, 45, tzinfo=UTC),
+        )
+        first = store.unique_tag("baseline")
+        store.create_run(first)
+
+        # When
+        second = store.unique_tag("baseline")
+
+        # Then
+        assert first == "baseline-123045"
+        assert second == "baseline-123045-2"
+        store.close()
+
+    def test_suffixed_tag_resolves_to_its_run(self, tmp_path) -> None:
+        """Given a suffixed tag, then resolve_ref finds that exact run."""
+        # Given
+        store = ResultStore(tmp_path / "test.db")
+        store.create_run("baseline")
+        suffixed = store.unique_tag("baseline")
+        run_id = store.create_run(suffixed)
+
+        # When
+        resolved = store.resolve_ref(suffixed)
+
+        # Then
+        assert resolved["id"] == run_id
         store.close()
 
 
