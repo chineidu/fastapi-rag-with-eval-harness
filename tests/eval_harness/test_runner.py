@@ -8,6 +8,7 @@ from src.eval_harness.runner import (
     validate_result,
 )
 from src.eval_harness.store import ResultStore
+from src.schemas.generation import GeneratedAnswer
 from src.schemas.harness import (
     QueryOutcome,
     RetrievalResult,
@@ -15,6 +16,7 @@ from src.schemas.harness import (
     RunSummary,
 )
 from src.schemas.models import GroundTruthRecord
+from src.schemas.retrieval import SearchHit
 
 RECORD = GroundTruthRecord(
     query_id="q1",
@@ -439,8 +441,15 @@ class StubAdapter:
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
         return RetrievalResult(documents=[RetrievedDocument("docs/quickstart.md", 0.9)])
 
-    def generate(self, query: str, documents: list[str]) -> str:
-        return "stub answer"
+    async def agenerate(
+        self,
+        query: str,
+        documents: list[SearchHit] | None = None,
+        k: int = 10,
+    ) -> GeneratedAnswer:
+        return GeneratedAnswer(
+            answer="stub answer", citations=[], model_id="test", grounded=True
+        )
 
 
 class FailingAdapter:
@@ -460,5 +469,10 @@ class FailingAdapter:
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
         raise self._exc
 
-    def generate(self, query: str, documents: list[str]) -> str:
+    async def agenerate(
+        self,
+        query: str,
+        documents: list[SearchHit] | None = None,
+        k: int = 10,
+    ) -> GeneratedAnswer:
         raise self._exc

@@ -2,7 +2,9 @@
 
 from typing import Protocol
 
+from src.schemas.generation import GeneratedAnswer
 from src.schemas.harness import RetrievalResult
+from src.schemas.retrieval import SearchHit
 
 
 class RetrieverAdapter(Protocol):
@@ -30,20 +32,28 @@ class RetrieverAdapter(Protocol):
         """
         ...
 
-    def generate(self, query: str, documents: list[str]) -> str:
-        """Generate an answer from retrieved documents (deferred).
+    async def agenerate(
+        self,
+        query: str,
+        documents: list[SearchHit] | None = None,
+        k: int = 10,
+    ) -> GeneratedAnswer:
+        """Generate a structured answer from retrieved chunk contexts.
 
         Parameters
         ----------
         query : str
             The user question.
-        documents : list[str]
-            Retrieved document paths used as context.
+        documents : list[SearchHit] | None
+            Ranked chunk hits supplying answer grounding. When ``None``,
+            the adapter retrieves ``k`` documents first.
+        k : int
+            Documents to retrieve when ``documents`` is ``None``.
 
         Returns
         -------
-        str
-            The generated answer. Reserved for future generation eval.
+        GeneratedAnswer
+            Answer text with citations, model id, and grounding flag.
 
         """
         ...

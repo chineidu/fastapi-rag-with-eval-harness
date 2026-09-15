@@ -1,6 +1,6 @@
 ---
 generated: 2026-09-15
-covers: 0001-0026
+covers: 0001-0027
 ---
 
 # Architecture overview
@@ -10,7 +10,8 @@ pinned FastAPI documentation corpus. A portable harness measures
 document-level retrieval quality, and one project-specific adapter
 connects it to the retriever in this repo, now running hybrid
 lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
-over the original dense baseline.
+over the original dense baseline, with a proposed generation contract
+for grounded answers.
 
 ## Evaluation methodology
 
@@ -58,9 +59,9 @@ runner, classified retries, and SQLite persistence.
 The harness-to-RAG boundary is document-level: the adapter owns
 chunking and returns typed document hits; the harness owns timing.
 
-- `0004` RetrieverAdapter protocol (ratified, amended by 0019):
-  separate `retrieve()` and `generate()` methods; the element shape is
-  amended by 0019.
+- `0004` RetrieverAdapter protocol (ratified, amended by 0019 and
+  0027): separate `retrieve()` and `generate()` methods; the element
+  shape is amended by 0019 and the generation side is amended by 0027.
 - `0012` Chunking is adapter-internal (ratified): the harness never
   sees chunks, so chunking experiments cannot invalidate ground truth.
 - `0019` RetrievedDocument element type (ratified, amends 0004):
@@ -127,6 +128,18 @@ fused before dedupe to recover exact-token matches the baseline misses.
   normalized in `rrf_fuse`); hybrid is the active retriever
   (`hybrid_enabled: true`) with the dense-only path kept as the diff
   baseline; distribution across replicas deferred to a future ADR.
+
+## Generation
+
+Few-shot grounded answers over best-chunk texts, typed for future
+answer eval, which stays deferred for now.
+
+- `0027` Few-shot grounded generation with structured citations
+  (ratified, amends 0004): OpenRouter + instructor returning
+  `GeneratedAnswer` with `answer`, `citations`, `model_id`, and
+  `grounded`; async-only `agenerate` over `list[SearchHit]`; prompt
+  pair as `GenerationPrompt` in schemas; logic in `RAGGenerator` with
+  `LocalRetriever.agenerate` delegating; generation eval deferred.
 
 ## CLI and configuration
 

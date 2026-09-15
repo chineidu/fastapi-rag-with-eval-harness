@@ -7,10 +7,12 @@ import pytest
 from qdrant_client import QdrantClient
 
 from src.app.adapter import LocalRetriever
+from src.app.generator import RAGGenerator
 from src.app.hybrid import TantivyIndex
 from src.app.vector_store import QdrantVectorStore
 from src.embeddings.stub import StubEmbedder
 from src.schemas.containers import QdrantConfig
+from src.schemas.generation import GeneratedAnswer
 from src.schemas.models import AppConfig
 from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
 
@@ -103,6 +105,24 @@ def _retriever(store: FakeStore, factor: int) -> LocalRetriever:
         overfetch_factor=factor,
         config=cast(AppConfig, _test_config()),
     )
+
+
+class FakeGenerator:
+    """RAGGenerator stub recording contexts and returning a fixed answer."""
+
+    def __init__(self) -> None:
+        """Initialize with no recorded contexts."""
+        self.last_contexts: list[SearchHit] = []
+
+    async def agenerate(self, query: str, contexts: list[SearchHit]) -> GeneratedAnswer:
+        """Record contexts and return a fixed grounded answer."""
+        self.last_contexts = contexts
+        return GeneratedAnswer(
+            answer="stub answer",
+            citations=["docs/a.md"],
+            model_id="test-model",
+            grounded=True,
+        )
 
 
 class TestLocalRetriever:
@@ -285,7 +305,7 @@ class TestLocalRetriever:
             "docs/b.md",
         }
         assert result.metadata["hybrid_enabled"] is True
-        assert result.metadata["sparse_fetched"] == 1
+        assert result.metadata["sparse_fetched_count"] == 1
 
     def test_hybrid_without_lexical_warns_and_uses_dense(
         self, caplog: pytest.LogCaptureFixture
@@ -306,16 +326,117 @@ class TestLocalRetriever:
             result = retriever.retrieve("query", k=10)
         # Then
         assert [doc.doc_path for doc in result.documents] == ["docs/a.md"]
-        assert result.metadata["sparse_fetched"] == 0
+        assert result.metadata["sparse_fetched_count"] == 0
         assert any("lexical index" in record.message for record in caplog.records)
 
-    def test_generate_is_deferred(self) -> None:
-        """Generation is out of scope until ADR-0004's deferred phase."""
+    async def test_agenerate_delegates_with_explicit_contexts(self) -> None:
+        """Explicit chunk hits pass straight to the injected generator."""
         # Given
-        retriever = _retriever(FakeStore([]), factor=5)
+        contexts = [_hit("docs/a.md", 0.9, 0), _hit("docs/b.md", 0.7, 0)]
+        fake = FakeGenerator()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=FakeStore([]),
+            config=cast(AppConfig, _test_config()),
+            generator=cast(RAGGenerator, fake),
+        )
+        # When
+        result = await retriever.agenerate("query", contexts)
+        # Then
+        assert isinstance(result, GeneratedAnswer)
+        assert fake.last_contexts == contexts
+        assert result.citations == ["docs/a.md"]
+
+    async def test_agenerate_retrieves_best_chunks_when_none(self) -> None:
+        """Without contexts, retrieval supplies one best chunk per doc."""
+        # Given
+        store = FakeStore(
+            [
+                _hit("docs/a.md", 0.9, 0),
+                _hit("docs/a.md", 0.8, 1),
+                _hit("docs/b.md", 0.7, 0),
+            ]
+        )
+        fake = FakeGenerator()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            config=cast(AppConfig, _test_config()),
+            generator=cast(RAGGenerator, fake),
+        )
+        # When
+        result = await retriever.agenerate("query", None, k=2)
+        # Then
+        assert [hit.doc_path for hit in fake.last_contexts] == [
+            "docs/a.md",
+            "docs/b.md",
+        ]
+        assert result.grounded is True
+
+    async def test_agenerate_forwards_empty_list_without_retrieval(self) -> None:
+        """Explicit empty contexts skip retrieval and reach the generator."""
+        # Given
+        store = FakeStore([_hit("docs/a.md", 0.9, 0)])
+        fake = FakeGenerator()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            config=cast(AppConfig, _test_config()),
+            generator=cast(RAGGenerator, fake),
+        )
+        # When
+        result = await retriever.agenerate("query", [])
+        # Then
+        assert fake.last_contexts == []
+        assert isinstance(result, GeneratedAnswer)
+        assert store.last_limit is None
+
+    async def test_agenerate_rejects_non_positive_k_when_retrieving(self) -> None:
+        """Retrieval-backed agenerate validates k like retrieve does."""
+        # Given
+        fake = FakeGenerator()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=FakeStore([_hit("docs/a.md", 0.9, 0)]),
+            config=cast(AppConfig, _test_config()),
+            generator=cast(RAGGenerator, fake),
+        )
         # When / Then
-        with pytest.raises(NotImplementedError):
-            retriever.generate("query", ["docs/a.md"])
+        with pytest.raises(ValueError, match="k must be positive"):
+            await retriever.agenerate("query", None, k=0)
+        # Explicit contexts bypass k validation.
+        result = await retriever.agenerate("query", [], k=0)
+        assert isinstance(result, GeneratedAnswer)
+
+    async def test_agenerate_builds_generator_lazily(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without an injected generator, the first call builds one."""
+        # Given
+        import src.app.adapter as adapter_module
+
+        fake = FakeGenerator()
+        calls: list[object] = []
+
+        def _factory(*, config: object = None) -> FakeGenerator:
+            calls.append(config)
+            return fake
+
+        monkeypatch.setattr(adapter_module, "RAGGenerator", _factory)
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=FakeStore([]),
+            config=cast(AppConfig, _test_config()),
+        )
+        assert retriever._generator is None
+        contexts = [_hit("docs/a.md", 0.9, 0)]
+        # When
+        result = await retriever.agenerate("query", contexts)
+        # Then
+        assert len(calls) == 1
+        assert retriever._generator is fake
+        assert fake.last_contexts == contexts
+        assert isinstance(result, GeneratedAnswer)
 
 
 class TestLocalRetrieverWithQdrant:

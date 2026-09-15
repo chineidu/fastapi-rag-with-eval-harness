@@ -1,12 +1,14 @@
-"""Baseline retrieval adapter: embed a query, search chunks, dedupe to documents."""
+"""Retrieval adapter: embed a query, search chunks, dedupe to documents."""
 
 import logging
 from pathlib import Path
 
+from src.app.generator import RAGGenerator
 from src.app.hybrid import TantivyIndex, rrf_fuse
 from src.app.vector_store import VectorStore, get_vector_store
 from src.config import load_app_config
 from src.embeddings import AbstractEmbedder, get_embedder
+from src.schemas.generation import GeneratedAnswer
 from src.schemas.harness import RetrievalResult, RetrievedDocument
 from src.schemas.models import AppConfig
 from src.schemas.retrieval import SearchHit
@@ -34,6 +36,7 @@ class LocalRetriever:
         config: AppConfig | None = None,
         overfetch_factor: int | None = None,
         lexical: TantivyIndex | None = None,
+        generator: RAGGenerator | None = None,
     ) -> None:
         """Configure the retriever.
 
@@ -52,6 +55,10 @@ class LocalRetriever:
             Injectable lexical index (tests). Built from
             ``config.retriever_config.tantivy_index_dir`` when ``None`` and
             hybrid retrieval is enabled.
+        generator : RAGGenerator | None
+            Injectable generator (tests). Built lazily from ``config`` on
+            first ``agenerate`` call when ``None``, so retrieval-only use
+            never constructs an LLM client.
 
         Raises
         ------
@@ -60,6 +67,7 @@ class LocalRetriever:
 
         """
         cfg = config or load_app_config()
+        self._config = cfg
         self._embedder = embedder or get_embedder(cfg.embeddings_config)
         self._store = store or get_vector_store(cfg.indexer_config)
         resolved_factor = (
@@ -83,6 +91,51 @@ class LocalRetriever:
             self._lexical = TantivyIndex(Path(cfg.retriever_config.tantivy_index_dir))
         else:
             self._lexical = None
+        self._generator = generator
+
+    def _fused_hits(self, query: str, k: int) -> tuple[list[SearchHit], int]:
+        """Embed, search, and fuse dense and sparse chunk hits.
+
+        Parameters
+        ----------
+        query : str
+            The ``query_text`` from a ground truth record.
+        k : int
+            Number of documents wanted; sizes the chunk candidate window.
+
+        Returns
+        -------
+        tuple[list[SearchHit], int]
+            Fused chunk hits in score order plus the sparse fetch count.
+
+        """
+        # Embed the query with the same model used at indexing time.
+        vector: list[float] = self._embedder.embed_texts([query])[0]
+        # Over-fetch chunks so dedupe can still fill k document slots (ADR-0021).
+        limit: int = k * self._overfetch_factor
+        dense_hits: list[SearchHit] = self._store.search(vector, limit)
+        # Rank by score so the first hit per document is its best chunk,
+        # regardless of the order the backend returned.
+        dense_hits = sorted(dense_hits, key=lambda hit: hit.score, reverse=True)
+        sparse_fetched_count = 0
+        # Fuse BM25 candidates when hybrid retrieval is enabled.
+        if self._hybrid_enabled and self._lexical is not None:
+            sparse_hits: list[SearchHit] = self._lexical.search(query, self._sparse_k)
+            sparse_fetched_count = len(sparse_hits)
+            fused_hits: list[SearchHit] = rrf_fuse(
+                dense_hits,
+                sparse_hits,
+                rrf_k=self._rrf_k,
+                dense_weight=self._dense_weight,
+                sparse_weight=self._sparse_weight,
+            )
+        else:
+            if self._hybrid_enabled:
+                logger.warning(
+                    "Hybrid enabled but no lexical index; using dense hits only"
+                )
+            fused_hits = dense_hits
+        return fused_hits, sparse_fetched_count
 
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
         """Return the top-k documents for a query.
@@ -107,32 +160,8 @@ class LocalRetriever:
         """
         if k <= 0:
             raise ValueError(f"k must be positive, got {k}")
-        # Embed the query with the same model used at indexing time.
-        vector: list[float] = self._embedder.embed_texts([query])[0]
-        # Over-fetch chunks so dedupe can still fill k document slots (ADR-0021).
-        limit: int = k * self._overfetch_factor
-        dense_hits: list[SearchHit] = self._store.search(vector, limit)
-        # Rank by score so the first hit per document is its best chunk,
-        # regardless of the order the backend returned.
-        dense_hits = sorted(dense_hits, key=lambda hit: hit.score, reverse=True)
-        sparse_fetched = 0
-        # Fuse BM25 candidates when hybrid retrieval is enabled.
-        if self._hybrid_enabled and self._lexical is not None:
-            sparse_hits: list[SearchHit] = self._lexical.search(query, self._sparse_k)
-            sparse_fetched = len(sparse_hits)
-            fused_hits: list[SearchHit] = rrf_fuse(
-                dense_hits,
-                sparse_hits,
-                rrf_k=self._rrf_k,
-                dense_weight=self._dense_weight,
-                sparse_weight=self._sparse_weight,
-            )
-        else:
-            if self._hybrid_enabled:
-                logger.warning(
-                    "Hybrid enabled but no lexical index; using dense hits only"
-                )
-            fused_hits = dense_hits
+        fused_hits, sparse_fetched_count = self._fused_hits(query, k)
+        limit = k * self._overfetch_factor
         # Keep the best (first) hit per document, preserving score order.
         documents: list[RetrievedDocument] = []
         seen: set[str] = set()
@@ -159,7 +188,7 @@ class LocalRetriever:
             "rrf_k": self._rrf_k,
             "dense_weight": self._dense_weight,
             "sparse_weight": self._sparse_weight,
-            "sparse_fetched": sparse_fetched,
+            "sparse_fetched_count": sparse_fetched_count,
         }
         logger.debug(
             "Retrieved %d docs from %d chunks for k=%d",
@@ -169,27 +198,50 @@ class LocalRetriever:
         )
         return RetrievalResult(documents=documents, metadata=metadata)
 
-    def generate(self, query: str, documents: list[str]) -> str:
-        """Generate an answer from retrieved documents (deferred).
+    async def agenerate(
+        self,
+        query: str,
+        documents: list[SearchHit] | None = None,
+        k: int = 10,
+    ) -> GeneratedAnswer:
+        """Generate a structured answer, retrieving first when needed.
 
         Parameters
         ----------
         query : str
             The user question.
-        documents : list[str]
-            Retrieved document paths used as context.
+        documents : list[SearchHit] | None
+            Ranked chunk hits supplying grounding. When ``None``,
+            retrieve ``k`` documents first and use their best chunks.
+        k : int
+            Documents to retrieve when ``documents`` is ``None``.
 
         Returns
         -------
-        str
-            Never returned; generation eval is out of scope.
+        GeneratedAnswer
+            Answer text with citations clamped to context paths.
 
         Raises
         ------
-        NotImplementedError
-            Always. Generation eval is deferred per ADR-0004.
+        ValueError
+            If ``documents`` is ``None`` and ``k`` is not positive.
 
         """
-        raise NotImplementedError(
-            "generate() is deferred until generation eval is in scope (ADR-0004)"
-        )
+        if documents is not None:
+            contexts: list[SearchHit] = documents
+        else:
+            if k <= 0:
+                raise ValueError(f"k must be positive, got {k}")
+            fused_hits, _ = self._fused_hits(query, k)
+            contexts = []
+            seen: set[str] = set()
+            for hit in fused_hits:
+                if hit.doc_path in seen:
+                    continue
+                seen.add(hit.doc_path)
+                contexts.append(hit)
+                if len(contexts) == k:
+                    break
+        if self._generator is None:
+            self._generator = RAGGenerator(config=self._config)
+        return await self._generator.agenerate(query, contexts)

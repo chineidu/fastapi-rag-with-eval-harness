@@ -2,7 +2,9 @@
 status: ratified
 date: 2026-08-02
 deciders: project owner
-amended_by: 0019-retrieved-document-type
+amended_by:
+  - 0019-retrieved-document-type
+  - 0027-generation-with-citations
 ---
 
 # RetrieverAdapter protocol

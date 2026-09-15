@@ -122,11 +122,17 @@ The harness only depends on one interface. Implement it once per project in
 ```python
 class RetrieverAdapter(Protocol):
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult: ...
+    async def agenerate(
+        self,
+        query: str,
+        documents: list[SearchHit] | None = None,
+        k: int = 10,
+    ) -> GeneratedAnswer: ...
 ```
 
 `RetrievalResult.documents` is a ranked list of `RetrievedDocument` (`doc_path`, `score` pairs).
 Chunk-to-doc mapping is the adapter's job; the harness scores at doc level.
-`generate()` is reserved for future generation eval.
+Generation eval via `agenerate` stays deferred; the protocol exists so callers can retrieve-then-generate.
 
 Point the harness at your class with an import path:
 

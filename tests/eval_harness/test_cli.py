@@ -15,8 +15,10 @@ from src.eval_harness.cli import _category_means, app, load_adapter
 from src.eval_harness.loader import GroundTruthLoader
 from src.eval_harness.runner import EvalRunner
 from src.eval_harness.store import ResultStore
+from src.schemas.generation import GeneratedAnswer
 from src.schemas.harness import RetrievalResult, RetrievedDocument
 from src.schemas.models import GroundTruthRecord
+from src.schemas.retrieval import SearchHit
 
 RUNNER = CliRunner()
 
@@ -32,9 +34,16 @@ class StubAdapter:
         """Return the configured document with a fixed score."""
         return RetrievalResult(documents=[RetrievedDocument(self._doc, 0.9)])
 
-    def generate(self, query: str, documents: list[str]) -> str:
+    async def agenerate(
+        self,
+        query: str,
+        documents: list[SearchHit] | None = None,
+        k: int = 10,
+    ) -> GeneratedAnswer:
         """Return a stub answer."""
-        return "stub answer"
+        return GeneratedAnswer(
+            answer="stub answer", citations=[], model_id="test", grounded=True
+        )
 
 
 def _write_ground_truth(tmp_path: Path, records: list[dict]) -> Path:
