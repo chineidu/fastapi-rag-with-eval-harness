@@ -1,4 +1,4 @@
-"""Request-ID middleware stamping every HTTP request with an identifier."""
+"""Request ID middleware."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -20,7 +20,7 @@ class RequestIDMiddleware:
 
     Reuse an incoming ``x-request-id`` header when present, otherwise
     mint a random hex ID. The ID lands on ``request.state.request_id``
-    (read by ``_error_content``) and is echoed back as a response header.
+    (read by the error envelope) and is echoed back as a response header.
     """
 
     def __init__(self, app: Any) -> None:

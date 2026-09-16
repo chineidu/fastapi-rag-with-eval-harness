@@ -22,17 +22,18 @@ points the pattern does not settle for this repo were decided
 ## Decision
 
 Adopt this structure for `src/api/`: `app.py` with
-`create_application`, prefix normalization, CORS, and a middleware
-stack; `core/` with exceptions, lifespan, middleware, dependencies,
-and response helpers; `routes/v1/` with versioned routers mounted
-under the normalized base prefix. Port it slimmed down: no threadpool
-executor (the service is fully async), and lifespan builds
-`LocalRetriever` plus `RAGGenerator` clients into `app.state` instead
-of model loaders. Ship liveness and readiness (Qdrant reachable, index
-present) in 3a. Defer slowapi rate limiting to deploy time. Extend
-`ErrorCodeEnum` with generation, timeout, and input codes while keeping
-the `{status, error, request_id, path}` envelope and the
-`MsgSpecJSONResponse` renderer.
+`create_app`, prefix normalization, CORS from
+`api_config.middleware.cors`, and a middleware stack; `core/` with
+exceptions, lifespan, middleware, dependencies, and response helpers;
+`routes/v1/` with versioned routers mounted under the normalized base
+prefix. Port it slimmed down: no threadpool executor (the service is
+fully async), and the caller builds `LocalRetriever` and shares it via
+`app.state` in `create_app` while lifespan only probes it via
+`asyncio.to_thread` so startup never blocks. Ship liveness and
+readiness (Qdrant reachable, index present) in 3a. Defer slowapi rate
+limiting to deploy time. Extend `ErrorCodeEnum` with generation,
+timeout, and input codes while keeping the `{status, error,
+request_id, path}` envelope and the `MsgSpecJSONResponse` renderer.
 
 ## Alternatives considered
 

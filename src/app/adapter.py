@@ -11,7 +11,7 @@ from src.embeddings import AbstractEmbedder, get_embedder
 from src.schemas.generation import GeneratedAnswer
 from src.schemas.harness import RetrievalResult, RetrievedDocument
 from src.schemas.models import AppConfig
-from src.schemas.retrieval import SearchHit
+from src.schemas.retrieval import CollectionInfo, SearchHit
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,19 @@ class LocalRetriever:
         else:
             self._lexical = None
         self._generator = generator
+
+    def index_info(self) -> CollectionInfo:
+        """Describe the backing vector-store collection.
+
+        Sync blocking call; serve it from routes via ``asyncio.to_thread``.
+
+        Returns
+        -------
+        CollectionInfo
+            Collection name and chunk count for readiness reporting.
+
+        """
+        return self._store.describe()
 
     def _fused_hits(self, query: str, k: int) -> tuple[list[SearchHit], int]:
         """Embed, search, and fuse dense and sparse chunk hits.

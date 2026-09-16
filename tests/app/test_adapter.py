@@ -476,3 +476,16 @@ class TestLocalRetrieverWithQdrant:
             "docs/b.md",
         }
         assert result.metadata["chunks_fetched"] == 5
+
+
+class TestIndexInfo:
+    def test_delegates_to_store_describe(self) -> None:
+        """Expose the backing collection size for readiness probes."""
+        # Given
+        store = FakeStore([_hit("docs/a.md", 0.9, 0)])
+        retriever = _retriever(store, 5)
+        # When
+        info = retriever.index_info()
+        # Then
+        assert info.collection == "fake"
+        assert info.chunk_count == 1
