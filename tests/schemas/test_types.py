@@ -15,11 +15,21 @@ class TestEnvironmentEnum:
 
 
 class TestErrorCodeEnum:
-    def test_values(self) -> None:
-        assert ErrorCodeEnum.HTTP_ERROR.value == "http_error"
-        assert ErrorCodeEnum.INTERNAL_SERVER_ERROR.value == "internal_server_error"
-        assert ErrorCodeEnum.UNAUTHORIZED.value == "unauthorized"
-        assert ErrorCodeEnum.UNEXPECTED_ERROR.value == "unexpected_error"
+    @pytest.mark.parametrize(
+        ("member", "value"),
+        [
+            (ErrorCodeEnum.HTTP_ERROR, "http_error"),
+            (ErrorCodeEnum.INTERNAL_SERVER_ERROR, "internal_server_error"),
+            (ErrorCodeEnum.UNAUTHORIZED, "unauthorized"),
+            (ErrorCodeEnum.UNEXPECTED_ERROR, "unexpected_error"),
+            (ErrorCodeEnum.INVALID_INPUT, "invalid_input"),
+            (ErrorCodeEnum.GENERATION_ERROR, "generation_error"),
+            (ErrorCodeEnum.TIMEOUT_ERROR, "timeout_error"),
+        ],
+    )
+    def test_values(self, member: ErrorCodeEnum, value: str) -> None:
+        # Given / When / Then
+        assert member.value == value
 
 
 class TestRepoHandle:

@@ -40,9 +40,17 @@ class APIConfig:
     version: str = field(metadata={"description": "The version of the API."})
     status: str = field(metadata={"description": "The current status of the API."})
     prefix: str = field(metadata={"description": "The prefix for the API routes."})
+    timeout: int = field(
+        default=120, metadata={"description": "API request timeout in seconds."}
+    )
     middleware: Middleware = field(
         metadata={"description": "Middleware configuration."}
     )
+
+    def __post_init__(self) -> None:
+        """Reject non-positive request timeouts at the boundary."""
+        if self.timeout <= 0:
+            raise ValueError(f"API timeout must be positive, got {self.timeout}.")
 
 
 @dataclass(slots=True, kw_only=True)

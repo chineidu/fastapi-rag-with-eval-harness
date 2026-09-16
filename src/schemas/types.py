@@ -20,6 +20,9 @@ class ErrorCodeEnum(StrEnum):
     INTERNAL_SERVER_ERROR = "internal_server_error"
     UNAUTHORIZED = "unauthorized"
     UNEXPECTED_ERROR = "unexpected_error"
+    INVALID_INPUT = "invalid_input"
+    GENERATION_ERROR = "generation_error"
+    TIMEOUT_ERROR = "timeout_error"
 
 
 class ClassificationLabel(StrEnum):

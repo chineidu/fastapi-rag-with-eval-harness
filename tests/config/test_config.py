@@ -61,6 +61,26 @@ class TestAPIConfig:
         )
         assert cfg.title == "Test API"
         assert cfg.version == "1.0.0"
+        assert cfg.timeout == 120
+
+    def test_rejects_non_positive_timeout(self) -> None:
+        # Given
+        cors = CORS(allow_credentials=False)
+        mw = Middleware(cors=cors)
+        base = {
+            "title": "Test API",
+            "name": "Test",
+            "description": "A test API",
+            "version": "1.0.0",
+            "status": "healthy",
+            "prefix": "/api",
+            "middleware": mw,
+        }
+        # When / Then
+        with pytest.raises(ValueError, match="must be positive"):
+            APIConfig(**base, timeout=0)
+        with pytest.raises(ValueError, match="must be positive"):
+            APIConfig(**base, timeout=-5)
 
 
 class TestDatabaseConfig:
@@ -234,6 +254,7 @@ class TestModuleLevelAppConfig:
         assert app_config is not None
         assert app_config.api_config.title == "RAG-based Question Answering System"
         assert app_config.api_config.prefix == "/api/v1"
+        assert app_config.api_config.timeout == 120
         assert app_config.database_config.pool_size == 30
         assert app_config.database_config.expire_on_commit is False
         assert (

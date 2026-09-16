@@ -1,6 +1,6 @@
 ---
 generated: 2026-09-15
-covers: 0001-0027
+covers: 0001-0028
 ---
 
 # Architecture overview
@@ -10,8 +10,8 @@ pinned FastAPI documentation corpus. A portable harness measures
 document-level retrieval quality, and one project-specific adapter
 connects it to the retriever in this repo, now running hybrid
 lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
-over the original dense baseline, with a proposed generation contract
-for grounded answers.
+over the original dense baseline, with grounded generation over
+retrieved chunks.
 
 ## Evaluation methodology
 
@@ -137,9 +137,23 @@ answer eval, which stays deferred for now.
 - `0027` Few-shot grounded generation with structured citations
   (ratified, amends 0004): OpenRouter + instructor returning
   `GeneratedAnswer` with `answer`, `citations`, `model_id`, and
-  `grounded`; async-only `agenerate` over `list[SearchHit]`; prompt
-  pair as `GenerationPrompt` in schemas; logic in `RAGGenerator` with
-  `LocalRetriever.agenerate` delegating; generation eval deferred.
+  `grounded`; async-only `agenerate` over `list[SearchHit]`; few-shot
+  XML prompt with `GenerationPrompt` in schemas; logic in
+  `RAGGenerator` with `LocalRetriever.agenerate` delegating; errors
+  raise, citations clamp to context; generation eval deferred.
+
+## API service
+
+The HTTP service follows an established internal layout, versioned from day
+one, with readiness shipped early and rate limiting deferred to
+deploy time.
+
+- `0028` API service structure (ratified):
+  `app.py` factory with prefix normalization plus `core/` and
+  versioned `routes/v1/`; fully async port with retriever and
+  generator clients in lifespan state; liveness and readiness now;
+  slowapi deferred to Slice 4 deploy work; extended `ErrorCodeEnum`
+  under the existing error envelope.
 
 ## CLI and configuration
 

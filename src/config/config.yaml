@@ -6,6 +6,7 @@ config:
     version: v1.0.0
     status: healthy
     prefix: /api/v1
+    timeout: 120
     middleware:
       cors:
         allow_origins: ["*"]
