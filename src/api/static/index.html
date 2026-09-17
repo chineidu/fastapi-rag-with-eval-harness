@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FastAPI Docs RAG</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --line: rgba(128, 128, 128, 0.4);
+    --fill: rgba(128, 128, 128, 0.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.6;
+    margin: 0 auto;
+    max-width: 46rem;
+    padding: 3rem 1.25rem;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 1.25rem; }
+  form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1rem; }
+  input {
+    font: inherit;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+  }
+  input:focus-visible { outline: 2px solid rgba(120, 160, 255, 0.7); outline-offset: 1px; }
+  #query { flex: 1 1 16rem; }
+  .topk { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; opacity: 0.8; }
+  #top-k { width: 4rem; padding: 0.6rem 0.4rem; text-align: center; }
+  button {
+    font: inherit;
+    padding: 0.6rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--fill);
+    color: inherit;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(128, 128, 128, 0.2); }
+  button:focus-visible { outline: 2px solid rgba(120, 160, 255, 0.7); outline-offset: 1px; }
+  #status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    margin: 0 0 1rem;
+  }
+  #status[hidden] { display: none; }
+  #status .pulse {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  #status.error { color: #d9534f; }
+  #status.error .pulse { display: none; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.25; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  #answer { margin: 0 0 1rem; }
+  #answer p { margin: 0 0 0.75rem; }
+  #answer p:last-child { margin-bottom: 0; }
+  #answer ul { margin: 0 0 0.75rem; padding-left: 1.25rem; }
+  #answer li { margin: 0 0 0.25rem; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+    background: var(--fill);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+  .citation {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8em;
+    background: var(--fill);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.05em 0.5em;
+    white-space: nowrap;
+    cursor: help;
+  }
+  .caret {
+    display: inline-block;
+    width: 0.5ch;
+    height: 1.05em;
+    margin-left: 0.15em;
+    background: currentColor;
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  #meta { font-size: 0.8rem; }
+  .meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0 0 0.5rem; }
+  .badge {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    opacity: 0.85;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; list-style: none; margin: 0; padding: 0; }
+</style>
+</head>
+<body>
+<h1>FastAPI Docs RAG</h1>
+<form id="ask-form">
+  <input id="query" type="text" placeholder="Ask about FastAPI..." required autofocus>
+  <label class="topk">
+    <span>docs</span>
+    <input id="top-k" type="number" min="1" max="10" value="5" title="Number of context documents">
+  </label>
+  <button type="submit">Ask</button>
+</form>
+<div id="status" role="status" hidden><span class="pulse"></span><span id="status-text"></span></div>
+<div id="answer"></div>
+<div id="meta"></div>
+<script>
+const ENDPOINT = "/api/v1/ask/stream";
+
+const INLINE_RE = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+\.md)\]/g;
+const BULLET_RE = /^[-*]\s+(.*)$/;
+
+const form = document.getElementById("ask-form");
+const queryInput = document.getElementById("query");
+const topKInput = document.getElementById("top-k");
+const statusEl = document.getElementById("status");
+const statusText = document.getElementById("status-text");
+const answerEl = document.getElementById("answer");
+const metaEl = document.getElementById("meta");
+
+let inFlight = null;
+
+function setStatus(text, isError) {
+  if (!text) {
+    statusEl.hidden = true;
+    statusEl.classList.remove("error");
+    statusText.textContent = "";
+    return;
+  }
+  statusEl.hidden = false;
+  statusEl.classList.toggle("error", isError === true);
+  statusText.textContent = text;
+}
+
+function basename(path) {
+  const parts = path.split("/");
+  return parts[parts.length - 1];
+}
+
+function appendInline(parent, text) {
+  // Build inline nodes from code spans, bold, and [doc.md] citations.
+  let last = 0;
+  for (const match of text.matchAll(INLINE_RE)) {
+    if (match.index > last) {
+      parent.appendChild(document.createTextNode(text.slice(last, match.index)));
+    }
+    const [, code, bold, citation] = match;
+    if (code !== undefined) {
+      const el = document.createElement("code");
+      el.textContent = code;
+      parent.appendChild(el);
+    } else if (bold !== undefined) {
+      const el = document.createElement("strong");
+      el.textContent = bold;
+      parent.appendChild(el);
+    } else {
+      const el = document.createElement("span");
+      el.className = "citation";
+      el.title = citation;
+      el.textContent = basename(citation);
+      parent.appendChild(el);
+    }
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) {
+    parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+}
+
+function renderAnswer(text, isStreaming) {
+  // Rebuild the answer body from the cumulative snapshot.
+  answerEl.textContent = "";
+  let list = null;
+  let buffer = [];
+
+  const flush = () => {
+    if (buffer.length === 0) {
+      return;
+    }
+    const paragraph = document.createElement("p");
+    appendInline(paragraph, buffer.join(" "));
+    answerEl.appendChild(paragraph);
+    buffer = [];
+  };
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "") {
+      flush();
+      list = null;
+      continue;
+    }
+    const bullet = line.match(BULLET_RE);
+    if (bullet !== null) {
+      flush();
+      if (list === null) {
+        list = document.createElement("ul");
+        answerEl.appendChild(list);
+      }
+      const item = document.createElement("li");
+      appendInline(item, bullet[1]);
+      list.appendChild(item);
+      continue;
+    }
+    list = null;
+    buffer.push(line);
+  }
+  flush();
+
+  if (isStreaming) {
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    answerEl.appendChild(caret);
+  }
+}
+
+function renderMeta(snapshot) {
+  // Only the last frame before [DONE] is authoritative for meta.
+  metaEl.textContent = "";
+  const row = document.createElement("div");
+  row.className = "meta-row";
+
+  const model = document.createElement("span");
+  model.className = "badge";
+  model.textContent = snapshot.modelId || "unknown model";
+  row.appendChild(model);
+
+  const grounded = document.createElement("span");
+  grounded.className = "badge";
+  grounded.textContent = snapshot.grounded === true ? "grounded" : "not grounded";
+  row.appendChild(grounded);
+  metaEl.appendChild(row);
+
+  const citations = Array.isArray(snapshot.citations) ? snapshot.citations : [];
+  if (citations.length > 0) {
+    const list = document.createElement("ul");
+    list.className = "chips";
+    for (const citation of citations) {
+      const item = document.createElement("li");
+      item.className = "citation";
+      item.title = citation;
+      item.textContent = basename(citation);
+      list.appendChild(item);
+    }
+    metaEl.appendChild(list);
+  }
+}
+
+async function errorMessage(response) {
+  // Prefer the API error envelope, fall back to the bare status.
+  try {
+    const body = await response.json();
+    if (body && body.error && body.error.message) {
+      return "Error " + response.status + ": " + body.error.message;
+    }
+  } catch (error) {
+    // Ignore non-JSON bodies.
+  }
+  return "Request failed with status " + response.status;
+}
+
+async function ask() {
+  const query = queryInput.value.trim();
+  if (!query) {
+    return;
+  }
+  const topK = Math.min(Math.max(Number(topKInput.value) || 5, 1), 10);
+
+  // Cancel any previous stream before starting a new one.
+  if (inFlight !== null) {
+    inFlight.abort();
+  }
+  const controller = new AbortController();
+  inFlight = controller;
+  answerEl.textContent = "";
+  metaEl.textContent = "";
+  setStatus("Retrieving context...", false);
+
+  let response;
+  try {
+    response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: query, top_k: topK }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
+    setStatus("Request failed: " + error.message, true);
+    return;
+  }
+
+  if (!response.ok) {
+    setStatus(await errorMessage(response), true);
+    return;
+  }
+
+  // Read the SSE frames as they arrive.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let last = null;
+  let sawDone = false;
+  try {
+    while (!sawDone) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop();  // Keep the incomplete tail.
+      for (const frame of frames) {
+        if (!frame.startsWith("data:")) {
+          continue;
+        }
+        const payload = frame.slice(5).trim();
+        if (payload === "[DONE]") {
+          sawDone = true;
+          break;
+        }
+        last = JSON.parse(payload);
+        if (last.answer) {
+          renderAnswer(last.answer, true);
+        }
+        setStatus("Streaming answer...", false);
+      }
+    }
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      if (last !== null && last.answer) {
+        renderAnswer(last.answer, false);
+      }
+      setStatus("Stream interrupted: " + error.message, true);
+    }
+    return;
+  } finally {
+    if (inFlight === controller) {
+      inFlight = null;
+    }
+  }
+
+  if (sawDone && last !== null) {
+    renderAnswer(last.answer || "", false);
+    renderMeta(last);
+    setStatus("", false);
+  } else {
+    setStatus("Stream ended before completion.", true);
+  }
+}
+
+form.addEventListener("submit", function (event) {
+  event.preventDefault();
+  ask();
+});
+</script>
+</body>
+</html>

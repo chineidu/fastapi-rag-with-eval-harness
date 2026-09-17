@@ -34,9 +34,12 @@ Key design decisions
 
 - A single global Queue and QueueListener are created per process.
 - The first call to `create_logger()` initializes the logging system
-  ("first caller wins").
+  ("first caller wins"); omitted parameters default to INFO, plain text,
+  and console output.
 - Structured (JSON) vs plain-text logging is a process-wide decision and
   cannot be changed after initialization.
+- Later calls with explicit conflicting parameters warn and are ignored;
+  omitted parameters silently inherit the initialized configuration.
 - All real handlers (console, file, etc.) are attached to the QueueListener,
   never directly to loggers, to guarantee non-blocking behavior.
 - Loggers returned by `create_logger()` only have a QueueHandler attached.
@@ -49,17 +52,19 @@ This design is suitable for:
 Usage
 -----
 
-Call `create_logger()` early in application startup (e.g. in `main.py` or
-FastAPI lifespan startup) to configure logging:
+Call `create_logger()` early in application startup, before importing
+modules that create loggers (see `src/main.py` for the entrypoint
+pattern):
 
     logger = create_logger(
         __name__,
+        level=logging.DEBUG,
         structured=False,
         log_file="app.log",
     )
 
 Subsequent calls simply return non-blocking loggers that share the same
-queue and listener.
+queue and listener; omitting a parameter inherits the initialized value.
 """
 
 import atexit
@@ -130,8 +135,8 @@ _INIT_LOG_FILE: str | Path | None = None
 
 def _setup_listener(
     *,
-    level: int,
-    structured: bool,
+    level: int | None,
+    structured: bool | None,
     log_file: str | Path | None,
 ) -> None:
     """Initialize the global QueueListener (idempotent)."""
@@ -143,19 +148,20 @@ def _setup_listener(
         _INIT_LOG_FILE
 
     if _LOGGING_INITIALIZED:
-        if level != _INIT_LEVEL:
+        # Warn only when a caller explicitly requests a different value.
+        if level is not None and level != _INIT_LEVEL:
             warnings.warn(
                 f"Logging already initialized with level={_INIT_LEVEL}, "
                 f"requested level={level} will be ignored",
                 stacklevel=2,
             )
-        if structured != _STRUCTURED_ENABLED:
+        if structured is not None and structured != _STRUCTURED_ENABLED:
             warnings.warn(
                 f"Logging already initialized with structured={_STRUCTURED_ENABLED}, "
                 f"requested structured={structured} will be ignored",
                 stacklevel=2,
             )
-        if log_file != _INIT_LOG_FILE:
+        if log_file is not None and log_file != _INIT_LOG_FILE:
             warnings.warn(
                 f"Logging already initialized with log_file={_INIT_LOG_FILE!r}, "
                 f"requested log_file={log_file!r} will be ignored",
@@ -163,20 +169,23 @@ def _setup_listener(
             )
         return
 
-    formatter = _build_formatter(structured)
+    # Omitted parameters default to INFO, plain text, and console output.
+    init_level = level if level is not None else logging.INFO
+    init_structured = structured if structured is not None else False
+    formatter = _build_formatter(init_structured)
 
     handlers: list[logging.Handler] = []
 
     # Console handler
     console = logging.StreamHandler(sys.stdout)
-    console.setLevel(level)
+    console.setLevel(init_level)
     console.setFormatter(formatter)
     handlers.append(console)
 
     # Optional file handler
     if log_file:
         file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(level)
+        file_handler.setLevel(init_level)
         file_handler.setFormatter(formatter)
         handlers.append(file_handler)
 
@@ -190,8 +199,8 @@ def _setup_listener(
     atexit.register(_LISTENER.stop)
 
     _LOGGING_INITIALIZED = True
-    _STRUCTURED_ENABLED = structured
-    _INIT_LEVEL = level
+    _STRUCTURED_ENABLED = init_structured
+    _INIT_LEVEL = init_level
     _INIT_LOG_FILE = log_file
 
 
@@ -203,17 +212,37 @@ def _setup_listener(
 def create_logger(
     name: str = "logger",
     *,
-    level: int = logging.INFO,
-    structured: bool = False,
+    level: int | None = None,
+    structured: bool | None = None,
     log_file: str | Path | None = None,
 ) -> logging.Logger:
     """Create or return a non-blocking logger.
 
+    Parameters
+    ----------
+    name : str
+        Logger name; ``__main__`` resolves to the caller's module name.
+    level : int | None
+        Level for this logger; ``None`` inherits the initialized level.
+    structured : bool | None
+        JSON output. Honored on the first call; an explicit mismatch
+        later warns and is ignored.
+    log_file : str | Path | None
+        Additional file sink. Honored on the first call; an explicit
+        mismatch later warns and is ignored.
+
+    Returns
+    -------
+    logging.Logger
+        Logger with a QueueHandler feeding the shared listener.
+
     Notes
     -----
     - Logging configuration is process-wide.
-    - The first call initializes the logging system.
-    - Structured logging cannot be changed after initialization.
+    - The first call initializes the logging system; omitted parameters
+      default to INFO, plain text, and console output.
+    - Omitted parameters on later calls silently inherit; explicit
+      conflicting values warn and are ignored.
 
     """
     if name == "__main__":
@@ -231,7 +260,9 @@ def create_logger(
     )
 
     logger = logging.getLogger(name)
-    logger.setLevel(level)
+    # Omitted level inherits the initialized level instead of pinning INFO.
+    inherited = _INIT_LEVEL if _INIT_LEVEL is not None else logging.INFO
+    logger.setLevel(level if level is not None else inherited)
 
     if not any(isinstance(h, logging.handlers.QueueHandler) for h in logger.handlers):
         logger.addHandler(logging.handlers.QueueHandler(_LOG_QUEUE))

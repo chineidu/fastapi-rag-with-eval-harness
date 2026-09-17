@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import warnings
 from pathlib import Path
 
 import pytest
@@ -90,3 +91,12 @@ class TestCreateLogger:
     ) -> None:
         with pytest.warns(UserWarning, match="log_file"):
             create_logger("warn_test_3", log_file=str(tmp_path / "fake.log"))
+
+    def test_bare_call_after_init_does_not_warn(self) -> None:
+        # Warnings raised as errors: an inherited-params call must stay silent.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            create_logger("bare_after_init")
+
+    def test_omitted_level_inherits_initialized_level(self) -> None:
+        assert create_logger("level_inherit_test").level == logging.INFO

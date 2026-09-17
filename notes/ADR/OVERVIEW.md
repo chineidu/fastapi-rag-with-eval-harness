@@ -1,6 +1,6 @@
 ---
-generated: 2026-09-16
-covers: 0001-0029
+generated: 2026-09-17
+covers: 0001-0030
 ---
 
 # Architecture overview
@@ -12,7 +12,7 @@ connects it to the retriever in this repo, now running hybrid
 lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
 over the original dense baseline, with grounded generation over
 retrieved chunks served through non-streaming and SSE streaming
-endpoints.
+endpoints, plus a bundled chat page for browser use.
 
 ## Evaluation methodology
 
@@ -162,6 +162,11 @@ deploy time.
   generator clients in lifespan state; liveness and readiness now;
   slowapi deferred to Slice 4 deploy work; extended `ErrorCodeEnum`
   under the existing error envelope.
+- `0030` Bundled static chat UI (proposed): a self-contained
+  `index.html` served at `/` outside the OpenAPI schema; browser
+  streaming via a `fetch` reader over `POST /ask/stream` with
+  cumulative snapshots, citations rendered from the final frame; no
+  build step, no new dependency, same image as the API.
 
 ## CLI and configuration
 
