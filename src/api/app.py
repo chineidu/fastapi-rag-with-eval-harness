@@ -15,7 +15,7 @@ from src.api.core.exceptions import (
 )
 from src.api.core.lifespan import lifespan
 from src.api.core.middleware import RequestIDMiddleware
-from src.api.routes.v1 import ask, health
+from src.api.routes.v1 import ask, health, stream
 from src.app.adapter import LocalRetriever
 from src.config import app_config
 
@@ -61,5 +61,6 @@ def create_app(retriever: LocalRetriever) -> FastAPI:
 
     app.include_router(health.router, prefix=prefix)
     app.include_router(ask.router, prefix=prefix)
+    app.include_router(stream.router, prefix=prefix)
     logger.debug("Routes registered under prefix %s", prefix)
     return app

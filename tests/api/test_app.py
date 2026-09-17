@@ -30,12 +30,14 @@ class TestCreateApp:
             health = client.get(f"{prefix}/health")
             ready = client.get(f"{prefix}/ready")
             ask = client.post(f"{prefix}/ask", json={"query": "hi"})
+            stream = client.post(f"{prefix}/ask/stream", json={"query": "hi"})
             root = client.get("/health")
         # Then: the bare retriever only supports liveness; the others
         # resolve and fail downstream, which still proves the mount.
         assert health.status_code == 200
         assert ready.status_code == 503
         assert ask.status_code == 500
+        assert stream.status_code == 500
         assert root.status_code == 404
 
     def test_stores_retriever_on_state(self) -> None:

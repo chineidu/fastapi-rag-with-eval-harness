@@ -1,5 +1,6 @@
 """Tests for LocalRetriever chunk-to-document deduplication (ADR-0021)."""
 
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import cast
 
@@ -489,3 +490,61 @@ class TestIndexInfo:
         # Then
         assert info.collection == "fake"
         assert info.chunk_count == 1
+
+
+class _StreamingGenerator(FakeGenerator):
+    """RAGGenerator stub yielding scripted partial snapshots."""
+
+    def __init__(self, partials: list[GeneratedAnswer]) -> None:
+        """Store the partials to yield."""
+        super().__init__()
+        self._partials = partials
+
+    async def astream(
+        self, query: str, contexts: list[SearchHit]
+    ) -> AsyncIterator[GeneratedAnswer]:
+        """Record contexts and yield the scripted partials."""
+        self.last_contexts = contexts
+        for partial in self._partials:
+            yield partial
+
+
+def _stream_retriever(
+    partials: list[GeneratedAnswer],
+) -> tuple[LocalRetriever, _StreamingGenerator]:
+    """Build a retriever with injected store and streaming generator fakes."""
+    generator = _StreamingGenerator(partials)
+    retriever = LocalRetriever(
+        embedder=StubEmbedder(),
+        store=FakeStore([_hit("docs/a.md", 0.9, 0)]),
+        overfetch_factor=5,
+        generator=cast(RAGGenerator, generator),
+        config=cast(AppConfig, _test_config()),
+    )
+    return retriever, generator
+
+
+class TestAstream:
+    async def test_streams_partials_with_retrieved_context(self) -> None:
+        """Forward generator snapshots over retrieved chunk contexts."""
+        # Given
+        partials = [
+            GeneratedAnswer(answer="a", citations=[], model_id="m", grounded=True),
+            GeneratedAnswer(
+                answer="ab", citations=["docs/a.md"], model_id="m", grounded=True
+            ),
+        ]
+        retriever, generator = _stream_retriever(partials)
+        # When
+        seen = [item async for item in retriever.astream("q", k=5)]
+        # Then
+        assert seen == partials
+        assert [hit.doc_path for hit in generator.last_contexts] == ["docs/a.md"]
+
+    async def test_rejects_non_positive_k(self) -> None:
+        """Refuse to retrieve with a non-positive document count."""
+        # Given
+        retriever, _ = _stream_retriever([])
+        # When / Then
+        with pytest.raises(ValueError):
+            [item async for item in retriever.astream("q", k=0)]

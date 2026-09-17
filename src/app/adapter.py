@@ -1,6 +1,7 @@
 """Retrieval adapter: embed a query, search chunks, dedupe to documents."""
 
 import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from src.app.generator import RAGGenerator
@@ -240,21 +241,58 @@ class LocalRetriever:
             If ``documents`` is ``None`` and ``k`` is not positive.
 
         """
-        if documents is not None:
-            contexts: list[SearchHit] = documents
-        else:
-            if k <= 0:
-                raise ValueError(f"k must be positive, got {k}")
-            fused_hits, _ = self._fused_hits(query, k)
-            contexts = []
-            seen: set[str] = set()
-            for hit in fused_hits:
-                if hit.doc_path in seen:
-                    continue
-                seen.add(hit.doc_path)
-                contexts.append(hit)
-                if len(contexts) == k:
-                    break
+        contexts = self._resolve_contexts(query, documents, k)
         if self._generator is None:
             self._generator = RAGGenerator(config=self._config)
         return await self._generator.agenerate(query, contexts)
+
+    async def astream(self, query: str, k: int = 10) -> AsyncIterator[GeneratedAnswer]:
+        """Retrieve context, then stream partial structured answers.
+
+        Parameters
+        ----------
+        query : str
+            The user question.
+        k : int
+            Documents to retrieve before streaming.
+
+        Yields
+        ------
+        GeneratedAnswer
+            Growing partial snapshots followed by the citation-clamped
+            final answer from the generator.
+
+        Raises
+        ------
+        ValueError
+            If ``k`` is not positive.
+
+        """
+        contexts = self._resolve_contexts(query, None, k)
+        if self._generator is None:
+            self._generator = RAGGenerator(config=self._config)
+        async for partial in self._generator.astream(query, contexts):
+            yield partial
+
+    def _resolve_contexts(
+        self, query: str, documents: list[SearchHit] | None, k: int
+    ) -> list[SearchHit]:
+        """Use injected chunks, or retrieve and dedupe to one hit per document."""
+        if documents is not None:
+            return documents
+
+        if k <= 0:
+            raise ValueError(f"k must be positive, got {k}")
+        fused_hits, _ = self._fused_hits(query, k)
+        contexts: list[SearchHit] = []
+        seen: set[str] = set()
+
+        for hit in fused_hits:
+            # Keep the best (first) hit per document, preserving score order.
+            if hit.doc_path in seen:
+                continue
+            seen.add(hit.doc_path)
+            contexts.append(hit)
+            if len(contexts) == k:
+                break
+        return contexts

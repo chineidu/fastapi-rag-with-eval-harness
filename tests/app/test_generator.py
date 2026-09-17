@@ -1,5 +1,6 @@
 """Tests for RAGGenerator prompt assembly and agenerate (ADR-0027)."""
 
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -165,3 +166,94 @@ class TestAgenerate:
         # When / Then
         with pytest.raises(ConnectionError):
             await generator.agenerate("q", [_hit("docs/a.md", "alpha")])
+
+
+class _FakeStreamingCompletions:
+    """Stub for aclient.chat.completions with scripted partials."""
+
+    def __init__(
+        self,
+        partials: list[GeneratedAnswer] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        """Store the partials to yield or the error to raise."""
+        self._partials = partials or []
+        self._error = error
+        self.last_kwargs: dict[str, Any] = {}
+
+    async def create_partial(self, **kwargs: Any) -> AsyncGenerator[GeneratedAnswer]:
+        """Record kwargs, then yield partials or raise on iteration."""
+        self.last_kwargs = kwargs
+        if self._error is not None:
+            raise self._error
+        for partial in self._partials:
+            yield partial
+
+
+class _FakeStreamingAclient:
+    """Stub instructor client exposing chat.completions.create_partial."""
+
+    def __init__(
+        self,
+        partials: list[GeneratedAnswer] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        """Store the scripted stream behavior."""
+        self.chat = SimpleNamespace(
+            completions=_FakeStreamingCompletions(partials, error)
+        )
+
+
+class TestAstream:
+    async def test_yields_partials_then_clamped_final(self) -> None:
+        """Snapshots pass through; only the final yield is clamped."""
+        # Given
+        partials = [
+            GeneratedAnswer(
+                answer="use", citations=[], model_id="llm-echo", grounded=True
+            ),
+            GeneratedAnswer(
+                answer="use Response",
+                citations=["docs/a.md", "docs/ghost.md"],
+                model_id="llm-echo",
+                grounded=True,
+            ),
+        ]
+        aclient = _FakeStreamingAclient(partials)
+        generator = RAGGenerator(config=_config(), aclient=aclient)
+        # When
+        seen = [
+            item async for item in generator.astream("q", [_hit("docs/a.md", "alpha")])
+        ]
+        # Then
+        assert len(seen) == 3
+        assert seen[0].answer == "use"
+        assert seen[1].citations == ["docs/a.md", "docs/ghost.md"]
+        assert seen[2].citations == ["docs/a.md"]
+        assert seen[2].model_id == "test-model"
+        assert aclient.chat.completions.last_kwargs["model"] == "test-model"
+        assert aclient.chat.completions.last_kwargs["response_model"] is GeneratedAnswer
+
+    async def test_empty_stream_yields_nothing(self) -> None:
+        """A provider that yields nothing produces no events."""
+        # Given
+        aclient = _FakeStreamingAclient([])
+        generator = RAGGenerator(config=_config(), aclient=aclient)
+        # When
+        seen = [
+            item async for item in generator.astream("q", [_hit("docs/a.md", "alpha")])
+        ]
+        # Then
+        assert seen == []
+
+    async def test_reraises_transport_errors(self) -> None:
+        """Stream failures propagate instead of ending silently."""
+        # Given
+        aclient = _FakeStreamingAclient(error=ConnectionError("openrouter down"))
+        generator = RAGGenerator(config=_config(), aclient=aclient)
+        # When / Then
+        with pytest.raises(ConnectionError):
+            [
+                item
+                async for item in generator.astream("q", [_hit("docs/a.md", "alpha")])
+            ]

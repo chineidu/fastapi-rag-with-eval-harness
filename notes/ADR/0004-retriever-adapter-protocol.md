@@ -5,6 +5,7 @@ deciders: project owner
 amended_by:
   - 0019-retrieved-document-type
   - 0027-generation-with-citations
+  - 0029-streaming-generation
 ---
 
 # RetrieverAdapter protocol

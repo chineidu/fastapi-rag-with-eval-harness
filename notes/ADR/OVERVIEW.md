@@ -1,6 +1,6 @@
 ---
-generated: 2026-09-15
-covers: 0001-0028
+generated: 2026-09-16
+covers: 0001-0029
 ---
 
 # Architecture overview
@@ -11,7 +11,8 @@ document-level retrieval quality, and one project-specific adapter
 connects it to the retriever in this repo, now running hybrid
 lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
 over the original dense baseline, with grounded generation over
-retrieved chunks.
+retrieved chunks served through non-streaming and SSE streaming
+endpoints.
 
 ## Evaluation methodology
 
@@ -59,9 +60,10 @@ runner, classified retries, and SQLite persistence.
 The harness-to-RAG boundary is document-level: the adapter owns
 chunking and returns typed document hits; the harness owns timing.
 
-- `0004` RetrieverAdapter protocol (ratified, amended by 0019 and
-  0027): separate `retrieve()` and `generate()` methods; the element
-  shape is amended by 0019 and the generation side is amended by 0027.
+- `0004` RetrieverAdapter protocol (ratified, amended by 0019, 0027,
+  and 0029): separate `retrieve()` and `generate()` methods; the
+  element shape is amended by 0019, the generation side by 0027, and
+  the streaming side by 0029.
 - `0012` Chunking is adapter-internal (ratified): the harness never
   sees chunks, so chunking experiments cannot invalidate ground truth.
 - `0019` RetrievedDocument element type (ratified, amends 0004):
@@ -141,6 +143,12 @@ answer eval, which stays deferred for now.
   XML prompt with `GenerationPrompt` in schemas; logic in
   `RAGGenerator` with `LocalRetriever.agenerate` delegating; errors
   raise, citations clamp to context; generation eval deferred.
+- `0029` Streaming generation over SSE (proposed, amends 0004):
+  `instructor.Partial[GeneratedAnswer]` snapshots from a separate
+  `POST /ask/stream`; partials pass through unclamped with a
+  citation-clamped final before `[DONE]`; pre-first-byte failures keep
+  3a status codes while mid-stream stalls end the connection;
+  `api_config.timeout` bounds time-to-first-token; no new dependency.
 
 ## API service
 
