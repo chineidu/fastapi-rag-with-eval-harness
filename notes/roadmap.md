@@ -1,8 +1,9 @@
 # Phase 2 roadmap - slices
 
 Handoff notes for a fresh session. Slices are ordered by execution
-priority: retrieval (done), generation (done, committed), API service incl. streaming (next: 3a then 3b), then distribution
-at deploy time. Update statuses here as slices land.
+priority: retrieval (done), generation (done, committed), API service
+incl. streaming (done, committed), then distribution at deploy time.
+Update statuses here as slices land.
 
 Status legend: done / next / planned / deferred.
 
@@ -42,37 +43,35 @@ Decisions landed (ADR-0027, ratified):
 
 Verification: `ruff check` + `ty check` pass, `pytest -q` 445 passed.
 
-## Slice 3 - API service (next, in two parts)
+## Slice 3 - API service (done, committed)
 
-New `src/api/` router wrapping retrieve + generate into a service.
-Depends on slice 2 (landed). No distribution dependency for local/dev use.
-Streaming is bundled here as a second part, not a new slice, since it
-shares the same service wiring behind a separate endpoint. Each part
-lands in 2-3 reviewable commits, never one big commit.
+New `src/api/` router wrapping retrieve + generate into a service,
+landed in two parts as planned, each in two reviewable commits.
+Depends on slice 2 (landed). No distribution dependency for local/dev
+use. Streaming was bundled here as a second part, not a new slice,
+since it shares the same service wiring behind a separate endpoint.
 
-### Slice 3a - Non-streaming service (first)
+### Slice 3a - Non-streaming service (done, committed)
 
-- Contract + ADR first: route shape, request/response schemas, error
-  mapping for raised transport errors.
-- Commits: (1) request/response schemas; (2) route + service wiring
-  (`src/api/` router, app factory, health endpoint); (3) error mapping
-  + TestClient tests (faked generator, no network).
+- Landed `5fe4025` (schemas + error envelope) and `a90ee79` (factory,
+  health/ready/ask routes, lifespan probes, request-id middleware).
+- ADR-0028 ratified; extended `ErrorCodeEnum` under the existing
+  error envelope.
 
-### Slice 3b - Streaming generation (second)
+### Slice 3b - Streaming generation (done, committed)
 
-- No new libraries: raw `openai.AsyncOpenAI` SSE (`stream=True`) or
-  `instructor.Partial[GeneratedAnswer]`; promote `openai` to a direct
-  dep via `uv add openai`.
-- Contract + ADR first: `astream` shape (deltas vs snapshots), SSE event
-  format (token events + terminal metadata with citations/grounded),
-  mid-stream error semantics, another ADR-0004 protocol amendment.
-- Commits: (1) `astream` on `RAGGenerator` + unit tests with a faked
-  async-iterator client; (2) SSE endpoint + event format + streaming
-  tests. The non-streaming path stays for the eval harness.
+- Landed `c5a5ffa` (SSE endpoint + `astream`) and `cc8721a` (snapshot
+  collapse + schema-mode fix). ADR-0029 ratified, amends ADR-0004.
+- As-built deviation: no new dependency. Streaming uses
+  `instructor.Partial[GeneratedAnswer]` snapshots as SSE `data:`
+  frames with a terminal `[DONE]`; `openai` stays transitive.
+- Verification: `ruff format` + `ruff check` + `ty check` pass,
+  `pytest -q` 509 passed, coverage 96.13%; live-verified `/ask` and
+  `/ask/stream` against Qdrant + OpenRouter.
 
-## Slice 4 - Index distribution (deferred, deploy-time)
+## Slice 4 - Index distribution (next, deploy-time)
 
-Deferred to a future ADR (draft as `proposed` first). Full workflow draft
+Starts with an ADR (draft as `proposed` first). Full workflow draft
 in `notes.md` -> "Hybrid index workflow - option 2".
 
 Shape: CI builds image v123 once; a one-off job builds the Qdrant
@@ -82,7 +81,7 @@ fetch the manifest, download and verify the tarball fingerprint, and
 fail readiness on mismatch. Cleanup keeps the last 1-2 versions;
 rollback is redeploy with the old version.
 
-Priority: independent of slices 2-3. Not urgent until a real
+Priority: independent of the landed slices. Not urgent until a real
 multi-replica deploy is on the table; then it can run in parallel.
 
 ## Parked items (flagged, not fixed)
@@ -93,10 +92,15 @@ multi-replica deploy is on the table; then it can run in parallel.
 - ADR 0025 Consequences references `rag-eval diff v1-baseline v2-hybrid`;
   the actual tag is `baseline`.
 - Qdrant container running v1.15.1 vs `docker-compose.yml` pin v1.16.3.
+- Streaming pre-first-byte gap: clients get no feedback during
+  retrieval + time-to-first-token (1-3s). An immediate SSE connect
+  comment would fix it, but streaming before the first snapshot
+  turns 422/504/500 responses into in-band errors; decision open.
 
 ## Key references
 
 - `notes.md` - iteration log, tuning sweep, distribution workflow draft
-- `notes/ADR/0025-hybrid-search.md`, `notes/ADR/0027-generation-with-citations.md`, `notes/ADR/OVERVIEW.md`
+- `notes/ADR/` - 0025 (hybrid), 0027 (generation), 0028 (API
+  structure), 0029 (streaming); `OVERVIEW.md` for the full digest
 - `README.md` section 4.4 - hybrid retrieval architecture
 - Eval history: `data/.rag-eval/runs.db` (baseline run 2, final run 13)

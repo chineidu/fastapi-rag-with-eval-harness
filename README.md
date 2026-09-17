@@ -155,6 +155,20 @@ diff:
   the right docs?"
 - `precision@k = |retrieved[:k] intersect relevant| / k` - "how much of the
   top-k was relevant?"
+
+The two denominators are the whole story: precision divides by what you
+returned (always `k`), recall divides by the ground truth (all relevant docs
+for the query). With 10 relevant docs of which 3 appear in a top-5,
+precision@5 is 0.6 and recall@5 is 0.3.
+
+They also fail differently. Recall is monotone in `k`: fetching more can only
+find more relevant docs, so it climbs toward 1.0, while precision usually
+decays as extra slots dilute the list - which is why both are always reported
+at a fixed `k`. Low precision pads the generator's context with noise; low
+recall means a relevant doc never reached the candidate set, where no
+downstream step can recover it. Recall is the primary metric here for that
+reason (see ADR-0001); precision is tracked alongside at the same `k`.
+
 - Aggregation: mean per category (`DIRECT_LOOKUP`, `MULTI_HOP`,
   `CONCEPTUAL`) plus an `OVERALL` mean over answerable queries only.
 - `diff` flags a category when `|delta|` exceeds the absolute threshold or
