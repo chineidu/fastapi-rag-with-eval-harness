@@ -50,7 +50,7 @@ runner, classified retries, and SQLite persistence.
 - `0014` Error classification with backoff (ratified): recoverable
   errors retry twice with exponential backoff; fatal errors are logged,
   skipped, and mark the run partial.
-- `0026` Unique run tags with timestamp suffixes (proposed, amends
+- `0026` Unique run tags with timestamp suffixes (ratified, amends
   0006): a colliding tag gets a UTC `-HHMMSS` suffix, with `-2`, `-3`,
   ... on same-second collisions; the first run under a tag keeps the
   plain name.
@@ -162,7 +162,7 @@ deploy time.
   generator clients in lifespan state; liveness and readiness now;
   slowapi deferred to Slice 4 deploy work; extended `ErrorCodeEnum`
   under the existing error envelope.
-- `0030` Bundled static chat UI (proposed): a self-contained
+- `0030` Bundled static chat UI (ratified): a self-contained
   `index.html` served at `/` outside the OpenAPI schema; browser
   streaming via a `fetch` reader over `POST /ask/stream` with
   cumulative snapshots, citations rendered from the final frame; no
