@@ -10,7 +10,12 @@ from fastapi.responses import StreamingResponse
 
 from src import create_logger
 from src.api.core.dependencies import get_retriever
-from src.api.core.exceptions import GenerationError, RequestTimeoutError
+from src.api.core.exceptions import (
+    GenerationError,
+    RequestTimeoutError,
+    UpstreamUnavailableError,
+    map_provider_error,
+)
 from src.api.core.response import MsgSpecJSONResponse
 from src.app.adapter import LocalRetriever
 from src.config import app_config
@@ -53,11 +58,12 @@ async def ask_stream(
             )
         except TimeoutError as exc:
             raise RequestTimeoutError(f"Stream exceeded {timeout}s timeout") from exc
-    except RequestTimeoutError, GenerationError:
+    except RequestTimeoutError, GenerationError, UpstreamUnavailableError:
         raise
     except Exception as exc:
-        logger.exception("Stream failed for query %r", body.query[:120])
-        raise GenerationError(str(exc)) from exc
+        raise map_provider_error(
+            exc, logger=logger, operation="Stream", query_preview=body.query[:120]
+        ) from exc
 
     async def event_source() -> AsyncIterator[str]:
         try:

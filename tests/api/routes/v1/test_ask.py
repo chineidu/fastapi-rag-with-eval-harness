@@ -131,7 +131,10 @@ class TestAsk:
         assert response.status_code == 500
         body = response.json()
         assert body["error"]["code"] == "generation_error"
-        assert "Generation error: provider down" in body["error"]["message"]
+        assert (
+            body["error"]["message"]
+            == "Generation error: Generation failed, try again later"
+        )
 
     def test_slow_generation_maps_to_504(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Surface a stalled generation as a timeout envelope."""

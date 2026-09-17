@@ -22,6 +22,7 @@ class ErrorCodeEnum(StrEnum):
     UNEXPECTED_ERROR = "unexpected_error"
     INVALID_INPUT = "invalid_input"
     GENERATION_ERROR = "generation_error"
+    UPSTREAM_UNAVAILABLE = "upstream_unavailable"
     TIMEOUT_ERROR = "timeout_error"
 
 

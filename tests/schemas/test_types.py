@@ -24,6 +24,7 @@ class TestErrorCodeEnum:
             (ErrorCodeEnum.UNEXPECTED_ERROR, "unexpected_error"),
             (ErrorCodeEnum.INVALID_INPUT, "invalid_input"),
             (ErrorCodeEnum.GENERATION_ERROR, "generation_error"),
+            (ErrorCodeEnum.UPSTREAM_UNAVAILABLE, "upstream_unavailable"),
             (ErrorCodeEnum.TIMEOUT_ERROR, "timeout_error"),
         ],
     )

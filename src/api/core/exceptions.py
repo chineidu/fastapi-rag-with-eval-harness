@@ -1,5 +1,7 @@
 """API error taxonomy and exception handlers with a uniform envelope."""
 
+import logging
+
 from fastapi import Request, status
 from fastapi.exceptions import HTTPException, RequestValidationError
 
@@ -13,10 +15,13 @@ __all__ = [
     "BaseAPIError",
     "GenerationError",
     "RequestTimeoutError",
+    "UpstreamUnavailableError",
     "aapi_error_handler",
     "ahttp_error_handler",
     "arequest_validation_handler",
     "aunhandled_exception_handler",
+    "is_upstream_connection_error",
+    "map_provider_error",
 ]
 
 
@@ -62,6 +67,89 @@ class RequestTimeoutError(BaseAPIError):
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             error_code=ErrorCodeEnum.TIMEOUT_ERROR,
         )
+
+
+class UpstreamUnavailableError(BaseAPIError):
+    """Exception raised when the LLM provider is unreachable."""
+
+    def __init__(self, details: str) -> None:
+        """Build a 503 upstream error from provider details."""
+        message = f"Upstream unavailable: {details}"
+        super().__init__(
+            message,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_code=ErrorCodeEnum.UPSTREAM_UNAVAILABLE,
+        )
+
+
+def is_upstream_connection_error(exc: Exception) -> bool:
+    """Check whether an error chain signals a provider connection failure.
+
+    Parameters
+    ----------
+    exc : Exception
+        The raised error, possibly wrapping provider SDK errors.
+
+    Returns
+    -------
+    bool
+        True when any link in the cause chain names a known
+        connection failure, without importing LLM libraries.
+
+    """
+    # Match by class name to avoid coupling the API layer to LLM SDKs.
+    names: set[str] = {
+        "APIConnectionError",
+        "ConnectError",
+        "InstructorRetryException",
+    }
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in names:
+            return True
+        current = current.__cause__ or current.__context__
+    try:
+        message = str(exc)
+    except Exception:  # noqa: BLE001 - str() must never break the bool contract
+        return False
+    return "nodename nor servname" in message
+
+
+def map_provider_error(
+    exc: Exception,
+    *,
+    logger: logging.Logger,
+    operation: str,
+    query_preview: str,
+) -> BaseAPIError:
+    """Map a generation failure to 503 upstream or sanitized 500.
+
+    Parameters
+    ----------
+    exc : Exception
+        The raised error, possibly wrapping provider SDK errors.
+    logger : logging.Logger
+        Caller logger, so the log source stays in the route module.
+    operation : str
+        Route label for the log line (for example ``Ask``).
+    query_preview : str
+        Truncated query for the log line.
+
+    Returns
+    -------
+    BaseAPIError
+        Upstream error for known connection failures, else a
+        sanitized generation error.
+
+    """
+    # Map connection failures to 503 and sanitise unknowns to 500.
+    if is_upstream_connection_error(exc):
+        logger.warning("%s upstream unreachable for query %r", operation, query_preview)
+        return UpstreamUnavailableError("LLM provider unreachable, try again later")
+    logger.exception("%s failed for query %r", operation, query_preview)
+    return GenerationError("Generation failed, try again later")
 
 
 def _error_content(request: Request, message: str, code: str) -> dict:

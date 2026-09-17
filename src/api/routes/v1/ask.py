@@ -9,8 +9,8 @@ from src import create_logger
 from src.api.core.dependencies import get_retriever
 from src.api.core.exceptions import (
     BaseAPIError,
-    GenerationError,
     RequestTimeoutError,
+    map_provider_error,
 )
 from src.api.core.response import MsgSpecJSONResponse
 from src.app.adapter import LocalRetriever
@@ -40,5 +40,6 @@ async def ask(
     except BaseAPIError:
         raise
     except Exception as exc:
-        logger.exception("Ask failed for query %r", body.query[:120])
-        raise GenerationError(str(exc)) from exc
+        raise map_provider_error(
+            exc, logger=logger, operation="Ask", query_preview=body.query[:120]
+        ) from exc
