@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,8 +11,11 @@ from fastapi.testclient import TestClient
 from src.api.app import create_app
 from src.api.core.dependencies import get_retriever
 from src.app.adapter import LocalRetriever
+from src.app.generator import RAGGenerator
 from src.config import app_config
 from src.schemas.generation import GeneratedAnswer
+from src.schemas.models import AppConfig
+from src.schemas.retrieval import SearchHit
 
 
 class FakeRetriever:
@@ -50,7 +54,7 @@ class FakeRetriever:
             yield partial
 
 
-def _client(retriever: FakeRetriever) -> TestClient:
+def _client(retriever: Any) -> TestClient:
     """Test client with the retriever dependency overridden."""
     app = create_app(cast(LocalRetriever, retriever))
     app.dependency_overrides[get_retriever] = lambda: retriever
@@ -129,3 +133,85 @@ class TestAskStream:
         frames = _frames(response.text)
         assert len(frames) == 1
         assert "[DONE]" not in frames
+
+    def test_collapse_applies_through_generator(self) -> None:
+        """Duplicate and contentless frames collapse end to end."""
+        # Given: a leading null frame plus a duplicated partial.
+        partial = GeneratedAnswer(
+            answer="use", citations=[], model_id="llm-echo", grounded=True
+        )
+        script: list[Any] = [
+            SimpleNamespace(answer=None, citations=[], grounded=None),
+            partial,
+            partial,
+        ]
+        aclient = SimpleNamespace(
+            chat=SimpleNamespace(completions=_ScriptedCompletions(script))
+        )
+        generator = RAGGenerator(config=_generator_config(), aclient=aclient)
+        contexts = [
+            SearchHit(
+                chunk_id="docs/a.md#0000",
+                doc_path="docs/a.md",
+                chunk_index=0,
+                text="alpha",
+                score=0.9,
+            )
+        ]
+        # When
+        with _client(_GeneratorRetriever(generator, contexts)) as client:
+            response = client.post(f"{_prefix()}/ask/stream", json={"query": "What?"})
+        # Then: one partial event plus the clamped final plus done.
+        assert response.status_code == 200
+        frames = _frames(response.text)
+        assert frames[-1] == "[DONE]"
+        assert [json.loads(frame)["answer"] for frame in frames[:-1]] == [
+            "use",
+            "use",
+        ]
+
+
+class _ScriptedCompletions:
+    """Stub chat.completions serving scripted partial frames."""
+
+    def __init__(self, partials: list[Any]) -> None:
+        """Store the frames to yield."""
+        self._partials = partials
+
+    async def create_partial(self, **kwargs: Any) -> Any:
+        """Yield the scripted frames."""
+        for partial in self._partials:
+            yield partial
+
+
+class _GeneratorRetriever:
+    """Retriever stub delegating streaming to a real RAGGenerator."""
+
+    def __init__(self, generator: RAGGenerator, contexts: list[SearchHit]) -> None:
+        """Store the generator and grounding contexts."""
+        self._generator = generator
+        self._contexts = contexts
+
+    async def astream(self, query: str, k: int = 10) -> Any:
+        """Stream collapsed snapshots from the real generator."""
+        async for item in self._generator.astream(query, self._contexts):
+            yield item
+
+
+def _generator_config() -> AppConfig:
+    """App config stub carrying only the LLM slice the generator reads."""
+    return cast(
+        AppConfig,
+        SimpleNamespace(
+            rag_config=SimpleNamespace(
+                llm=SimpleNamespace(
+                    model_id="test-model",
+                    temperature=0.1,
+                    max_tokens=256,
+                    timeout_seconds=10,
+                    max_retries=1,
+                    seed=47,
+                )
+            )
+        ),
+    )

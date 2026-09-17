@@ -143,7 +143,7 @@ answer eval, which stays deferred for now.
   XML prompt with `GenerationPrompt` in schemas; logic in
   `RAGGenerator` with `LocalRetriever.agenerate` delegating; errors
   raise, citations clamp to context; generation eval deferred.
-- `0029` Streaming generation over SSE (proposed, amends 0004):
+- `0029` Streaming generation over SSE (ratified, amends 0004):
   `instructor.Partial[GeneratedAnswer]` snapshots from a separate
   `POST /ask/stream`; partials pass through unclamped with a
   citation-clamped final before `[DONE]`; pre-first-byte failures keep

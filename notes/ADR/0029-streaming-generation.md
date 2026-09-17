@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: ratified
 date: 2026-09-16
 deciders: project owner
 amends: 0004-retriever-adapter-protocol
@@ -23,10 +23,19 @@ gains `astream`, which yields growing partials and appends the
 citation-clamped final answer; `LocalRetriever` gains `astream`, which
 retrieves once up front and forwards the generator stream. Mid-stream
 snapshots may carry incomplete citations; only the last data event
-before `[DONE]` is clamped. Pre-first-byte failures keep their 3a
-status codes (422, 504, 500); a mid-stream stall terminates the
-connection without an envelope. `api_config.timeout` bounds
-time-to-first-token.
+before `[DONE]` is clamped. Consecutive snapshots that do not change the
+parsed answer, citations, or grounding flag are collapsed, and the
+leading contentless frame is suppressed, since providers emit many
+no-op chunks per response. The trailing clamped final derives from the
+last yielded snapshot, so a contentless tail frame never displaces
+streamed content. Both `agenerate` and `astream` run on
+instructor's schema mode (`Mode.JSON_SCHEMA`): tool-call argument
+batching under `Mode.TOOLS` delivered complete answers in a single
+frame, unconstrained `Mode.JSON` produced malformed output, while
+schema mode streams partials progressively under provider-enforced
+decoding. Pre-first-byte failures keep their 3a status codes (422, 504,
+500); a mid-stream stall terminates the connection without an envelope. `api_config.timeout`
+bounds time-to-first-token.
 
 ## Alternatives considered
 

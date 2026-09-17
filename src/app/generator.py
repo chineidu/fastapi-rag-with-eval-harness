@@ -38,7 +38,8 @@ class RAGGenerator:
             Application config. Loaded from the bundled YAML when ``None``.
         aclient : Any | None
             Injectable instructor async client (tests). Built from
-            ``rag_config.llm`` and ``OPENROUTER_*`` settings when ``None``.
+            ``rag_config.llm`` and ``OPENROUTER_*`` settings in JSON
+            schema mode when ``None``.
 
         """
         cfg = config or load_app_config()
@@ -54,7 +55,12 @@ class RAGGenerator:
                 timeout=llm.timeout_seconds,
                 max_retries=llm.max_retries,
             )
-            self._aclient = instructor.from_openai(openai_client)
+            # Schema mode streams partials progressively and constrains
+            # decoding; tool-call args batched into one frame and
+            # unconstrained JSON produced malformed output (ADR-0029).
+            self._aclient = instructor.from_openai(
+                openai_client, mode=instructor.Mode.JSON_SCHEMA
+            )
 
     async def agenerate(self, query: str, contexts: list[SearchHit]) -> GeneratedAnswer:
         """Generate a structured answer from chunk contexts.
@@ -113,8 +119,10 @@ class RAGGenerator:
         ------
         GeneratedAnswer
             Growing partial snapshots followed by the citation-clamped
-            final answer. Mid-stream snapshots may carry incomplete
-            citations; only the final yield is clamped.
+            final answer. Snapshots that do not change the answer,
+            citations, or grounding flag are collapsed, and the leading
+            contentless frame is suppressed; only the final yield is
+            authoritative for citations and model id.
 
         Raises
         ------
@@ -136,9 +144,24 @@ class RAGGenerator:
                 ],
             )
             last: GeneratedAnswer | None = None
+            previous: tuple[Any, tuple[str, ...], Any] | None = (
+                None  # (answer, citations, grounded)
+            )
             async for partial in partials:
-                yield partial
+                # Skip repeat snapshots: yield only on answer, citation, or grounding change.
+                snapshot = (
+                    partial.answer,
+                    tuple(partial.citations or []),
+                    partial.grounded,
+                )
+                if snapshot == previous:
+                    continue
+                previous = snapshot
+                # Suppress the leading frame before any content is parsed.
+                if not partial.answer and not partial.citations:
+                    continue
                 last = partial
+                yield partial
         except Exception:
             logger.exception("Generation stream failed for query %r", query[:120])
             raise

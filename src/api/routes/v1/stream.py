@@ -25,7 +25,7 @@ _DONE_EVENT = "data: [DONE]\n\n"
 
 def _encode_event(answer: GeneratedAnswer) -> str:
     """Frame one partial answer as a server-sent event."""
-    payload = msgspec.json.encode(answer.model_dump(by_alias=True)).decode()
+    payload: str = msgspec.json.encode(answer.model_dump(by_alias=True)).decode()
     return f"data: {payload}\n\n"
 
 
@@ -44,9 +44,13 @@ async def ask_stream(
     # commits 200 on entry, so failures must surface here to keep
     # their status codes.
     try:
-        pending = retriever.astream(body.query, k=body.top_k)
+        pending: AsyncIterator[GeneratedAnswer] = retriever.astream(
+            body.query, k=body.top_k
+        )
         try:
-            first = await asyncio.wait_for(anext(pending), timeout=timeout)
+            first: GeneratedAnswer = await asyncio.wait_for(
+                anext(pending), timeout=timeout
+            )
         except TimeoutError as exc:
             raise RequestTimeoutError(f"Stream exceeded {timeout}s timeout") from exc
     except RequestTimeoutError, GenerationError:

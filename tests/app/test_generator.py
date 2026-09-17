@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from typing import Any, cast
 
+import instructor
 import pytest
 
 from src.app.generator import RAGGenerator
@@ -64,6 +65,27 @@ class _FakeAclient:
     def __init__(self, response: GeneratedAnswer | None = None) -> None:
         """Store the response served by completions."""
         self.completions = _FakeCompletions(response)
+
+
+class TestClientConstruction:
+    def test_builds_instructor_client_in_json_schema_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Streaming granularity needs schema mode; JSON mode was flaky."""
+        # Given
+        captured: dict[str, Any] = {}
+
+        def fake_from_openai(client: Any, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+            return SimpleNamespace()
+
+        monkeypatch.setattr(
+            "src.app.generator.instructor.from_openai", fake_from_openai
+        )
+        # When
+        RAGGenerator(config=_config())
+        # Then
+        assert captured["mode"] is instructor.Mode.JSON_SCHEMA
 
 
 class TestBuildPrompt:
@@ -173,7 +195,7 @@ class _FakeStreamingCompletions:
 
     def __init__(
         self,
-        partials: list[GeneratedAnswer] | None = None,
+        partials: list[Any] | None = None,
         error: Exception | None = None,
     ) -> None:
         """Store the partials to yield or the error to raise."""
@@ -195,7 +217,7 @@ class _FakeStreamingAclient:
 
     def __init__(
         self,
-        partials: list[GeneratedAnswer] | None = None,
+        partials: list[Any] | None = None,
         error: Exception | None = None,
     ) -> None:
         """Store the scripted stream behavior."""
@@ -245,6 +267,63 @@ class TestAstream:
         ]
         # Then
         assert seen == []
+
+    async def test_collapses_noop_snapshots(self) -> None:
+        """Provider no-op chunks and the leading null frame never ship."""
+        # Given: two contentless frames, then a duplicated partial.
+        partial = GeneratedAnswer(
+            answer="use", citations=[], model_id="llm-echo", grounded=True
+        )
+        frames: list[Any] = [
+            SimpleNamespace(answer=None, citations=[], grounded=None),
+            SimpleNamespace(answer=None, citations=[], grounded=None),
+            partial,
+            partial,
+        ]
+        aclient = _FakeStreamingAclient(frames)
+        generator = RAGGenerator(config=_config(), aclient=aclient)
+        # When
+        seen = [
+            item async for item in generator.astream("q", [_hit("docs/a.md", "alpha")])
+        ]
+        # Then: one partial plus the clamped final, nothing else.
+        assert [item.answer for item in seen] == ["use", "use"]
+        assert seen[-1].model_id == "test-model"
+
+    async def test_all_contentless_stream_yields_nothing(self) -> None:
+        """Frames without content never reach the trailing clamp."""
+        # Given: only contentless frames, so the clamp has nothing valid.
+        frames: list[Any] = [
+            SimpleNamespace(answer=None, citations=[], grounded=None),
+            SimpleNamespace(answer="", citations=[], grounded=None),
+        ]
+        aclient = _FakeStreamingAclient(frames)
+        generator = RAGGenerator(config=_config(), aclient=aclient)
+        # When
+        seen = [
+            item async for item in generator.astream("q", [_hit("docs/a.md", "alpha")])
+        ]
+        # Then
+        assert seen == []
+
+    async def test_trailing_contentless_frame_keeps_final(self) -> None:
+        """A contentless tail frame never displaces the clamped final."""
+        # Given: valid content followed by a contentless reset frame.
+        frames: list[Any] = [
+            GeneratedAnswer(
+                answer="use", citations=[], model_id="llm-echo", grounded=True
+            ),
+            SimpleNamespace(answer=None, citations=[], grounded=None),
+        ]
+        aclient = _FakeStreamingAclient(frames)
+        generator = RAGGenerator(config=_config(), aclient=aclient)
+        # When
+        seen = [
+            item async for item in generator.astream("q", [_hit("docs/a.md", "alpha")])
+        ]
+        # Then: the partial plus the clamped final built from it.
+        assert [item.answer for item in seen] == ["use", "use"]
+        assert seen[-1].model_id == "test-model"
 
     async def test_reraises_transport_errors(self) -> None:
         """Stream failures propagate instead of ending silently."""
