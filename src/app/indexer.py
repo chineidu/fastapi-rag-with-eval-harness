@@ -5,7 +5,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
-from src.app.chunker import DEFAULT_CHUNK_SIZE, chunk_directory
+from src.app.chunker import DEFAULT_CHUNK_SIZE, ChunkStrategyEnum, chunk_directory
 from src.app.hybrid import TantivyIndex
 from src.app.vector_store import VectorStore
 from src.embeddings.base import AbstractEmbedder
@@ -56,6 +56,7 @@ class Indexer:
         *,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         overlap: int = 0,
+        chunk_strategy: ChunkStrategyEnum = ChunkStrategyEnum.NAIVE,
         lexical: TantivyIndex | None = None,
     ) -> None:
         """Configure the indexer.
@@ -70,6 +71,8 @@ class Indexer:
             Characters per chunk (forwarded to the chunker).
         overlap : int
             Characters reused between consecutive chunks.
+        chunk_strategy : ChunkStrategyEnum
+            Chunking strategy forwarded to the chunker.
         lexical : TantivyIndex | None
             Lexical index rebuilt alongside the vector store when set.
 
@@ -78,6 +81,7 @@ class Indexer:
         self._store = store
         self._chunk_size = chunk_size
         self._overlap = overlap
+        self._chunk_strategy = chunk_strategy
         self._lexical = lexical
 
     def build(
@@ -124,7 +128,10 @@ class Indexer:
         for root in roots:
             chunks.extend(
                 chunk_directory(
-                    root, chunk_size=self._chunk_size, overlap=self._overlap
+                    root,
+                    chunk_size=self._chunk_size,
+                    overlap=self._overlap,
+                    strategy=self._chunk_strategy,
                 )
             )
         if not chunks:

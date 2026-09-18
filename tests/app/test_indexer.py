@@ -10,6 +10,7 @@ from src.app.hybrid import TantivyIndex
 from src.app.indexer import Indexer, _corpus_fingerprint
 from src.embeddings.stub import StubEmbedder
 from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
+from src.schemas.types import ChunkStrategyEnum
 
 
 def _chunk(chunk_id: str, text: str) -> Chunk:
@@ -222,6 +223,70 @@ class TestIndexer:
         # Then
         assert report.skipped is False
         assert len(lexical.built) == report.indexed_chunks
+
+    def test_build_forwards_chunk_strategy(self, tmp_path: Path) -> None:
+        """Given structural strategy, then chunks and fingerprint differ from naive."""
+        # Given
+        text = "# A\none\n## B\ntwo\n"
+        (tmp_path / "doc.md").write_text(text, encoding="utf-8")
+        naive_store = FakeVectorStore()
+        naive_indexer = Indexer(
+            StubEmbedder(dim=8),
+            naive_store,
+            chunk_size=10,
+            overlap=0,
+            chunk_strategy=ChunkStrategyEnum.NAIVE,
+        )
+        structural_store = FakeVectorStore()
+        structural_indexer = Indexer(
+            StubEmbedder(dim=8),
+            structural_store,
+            chunk_size=10,
+            overlap=0,
+            chunk_strategy=ChunkStrategyEnum.STRUCTURAL,
+        )
+        # When
+        naive_report = naive_indexer.build(tmp_path)
+        structural_report = structural_indexer.build(tmp_path)
+        # Then
+        assert naive_report.skipped is False
+        assert structural_report.skipped is False
+        naive_chunks, _ = naive_store.upserted[0]
+        structural_chunks, _ = structural_store.upserted[0]
+        assert [chunk.text for chunk in naive_chunks] != [
+            chunk.text for chunk in structural_chunks
+        ]
+        assert naive_store.ensured is not None
+        assert structural_store.ensured is not None
+        assert naive_store.ensured[2] != structural_store.ensured[2]
+        for chunk in structural_chunks:
+            assert text[chunk.start_char : chunk.end_char] == chunk.text
+
+    def test_build_defaults_to_naive_strategy(self, tmp_path: Path) -> None:
+        """Given no strategy, then the indexer chunks like explicit naive."""
+        # Given
+        (tmp_path / "a.md").write_text("# H\nbody text here\n", encoding="utf-8")
+        default_store = FakeVectorStore()
+        default_indexer = Indexer(
+            StubEmbedder(dim=8), default_store, chunk_size=10, overlap=0
+        )
+        explicit_store = FakeVectorStore()
+        explicit_indexer = Indexer(
+            StubEmbedder(dim=8),
+            explicit_store,
+            chunk_size=10,
+            overlap=0,
+            chunk_strategy=ChunkStrategyEnum.NAIVE,
+        )
+        # When
+        default_indexer.build(tmp_path)
+        explicit_indexer.build(tmp_path)
+        # Then
+        default_chunks, _ = default_store.upserted[0]
+        explicit_chunks, _ = explicit_store.upserted[0]
+        assert [chunk.text for chunk in default_chunks] == [
+            chunk.text for chunk in explicit_chunks
+        ]
 
 
 class TestCorpusFingerprint:

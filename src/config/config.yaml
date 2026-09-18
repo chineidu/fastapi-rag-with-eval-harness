@@ -83,6 +83,7 @@ config:
       collection: "fastapi_docs"
     chunk_size: 2000
     overlap: 0
+    chunk_strategy: naive
 
   retriever_config:
     overfetch_factor: 5

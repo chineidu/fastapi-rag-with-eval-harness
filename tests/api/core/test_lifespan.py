@@ -11,6 +11,7 @@ from src.app.vector_store import VectorStore
 from src.embeddings.stub import StubEmbedder
 from src.schemas.models import AppConfig
 from src.schemas.retrieval import CollectionInfo
+from src.schemas.types import ChunkStrategyEnum
 
 
 class _DescribeStore:
@@ -42,7 +43,9 @@ def _config() -> AppConfig:
         AppConfig,
         SimpleNamespace(
             embeddings_config=SimpleNamespace(),
-            indexer_config=SimpleNamespace(chunk_size=2000, overlap=0),
+            indexer_config=SimpleNamespace(
+                chunk_size=2000, overlap=0, chunk_strategy=ChunkStrategyEnum.NAIVE
+            ),
             retriever_config=SimpleNamespace(
                 overfetch_factor=5,
                 hybrid_enabled=False,

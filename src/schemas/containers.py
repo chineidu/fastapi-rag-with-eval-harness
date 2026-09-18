@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from src.schemas.types import VectorStoreBackendEnum
+from src.schemas.types import ChunkStrategyEnum, VectorStoreBackendEnum
 
 
 @dataclass(slots=True, kw_only=True)
@@ -253,6 +253,10 @@ class IndexerConfig:
     )
     overlap: int = field(
         default=0, metadata={"description": "Chunk overlap in characters."}
+    )
+    chunk_strategy: ChunkStrategyEnum = field(
+        default=ChunkStrategyEnum.NAIVE,
+        metadata={"description": "Chunking strategy: naive or structural."},
     )
 
 

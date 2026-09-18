@@ -63,6 +63,7 @@ def build(
         store,
         chunk_size=cfg.indexer_config.chunk_size,
         overlap=cfg.indexer_config.overlap,
+        chunk_strategy=cfg.indexer_config.chunk_strategy,
         lexical=lexical,
     )
     # Reject empty path entries, which would resolve to ROOT itself.

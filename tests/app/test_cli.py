@@ -35,6 +35,7 @@ def cli_env(
         indexer_config=SimpleNamespace(
             chunk_size=100,
             overlap=0,
+            chunk_strategy="naive",
             qdrant=SimpleNamespace(collection="test_docs"),
             backend=SimpleNamespace(value="qdrant"),
         ),
@@ -191,6 +192,65 @@ class TestBuildCommand:
         # Then
         assert result.exit_code == 0
         assert "No chunks produced" in result.output
+
+    def test_chunk_strategy_is_forwarded_to_indexer(
+        self, cli_env: tuple[Path, list[BuildCall]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given indexer config, then chunk settings reach the Indexer."""
+        # Given
+        recorded: list[dict[str, Any]] = []
+
+        class CaptureIndexer:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                recorded.append(kwargs)
+
+            def build(
+                self, corpus_roots: list[Path], *, force: bool = False
+            ) -> IndexReport:
+                return IndexReport(indexed_chunks=1, skipped=False)
+
+        monkeypatch.setattr(cli_module, "Indexer", CaptureIndexer)
+        # When
+        result = RUNNER.invoke(cli_module.app, ["build"])
+        # Then
+        assert result.exit_code == 0
+        assert recorded[0]["chunk_size"] == 100
+        assert recorded[0]["overlap"] == 0
+        assert recorded[0]["chunk_strategy"] == "naive"
+
+    def test_structural_chunk_strategy_is_forwarded(
+        self, cli_env: tuple[Path, list[BuildCall]], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given structural config, then the structural value reaches the Indexer."""
+        # Given
+        recorded: list[dict[str, Any]] = []
+
+        class CaptureIndexer:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                recorded.append(kwargs)
+
+            def build(
+                self, corpus_roots: list[Path], *, force: bool = False
+            ) -> IndexReport:
+                return IndexReport(indexed_chunks=1, skipped=False)
+
+        structural_cfg = SimpleNamespace(
+            embeddings_config=SimpleNamespace(),
+            indexer_config=SimpleNamespace(
+                chunk_size=100,
+                overlap=0,
+                chunk_strategy="structural",
+                qdrant=SimpleNamespace(collection="test_docs"),
+                backend=SimpleNamespace(value="qdrant"),
+            ),
+        )
+        monkeypatch.setattr(cli_module, "Indexer", CaptureIndexer)
+        monkeypatch.setattr(cli_module, "load_app_config", lambda path: structural_cfg)
+        # When
+        result = RUNNER.invoke(cli_module.app, ["build"])
+        # Then
+        assert result.exit_code == 0
+        assert recorded[0]["chunk_strategy"] == "structural"
 
 
 class TestInspectCommand:

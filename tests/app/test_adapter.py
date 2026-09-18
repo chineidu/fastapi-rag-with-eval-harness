@@ -16,13 +16,20 @@ from src.schemas.containers import QdrantConfig
 from src.schemas.generation import GeneratedAnswer
 from src.schemas.models import AppConfig
 from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
+from src.schemas.types import ChunkStrategyEnum
 
 
-def _test_config(*, hybrid_enabled: bool = False) -> SimpleNamespace:
+def _test_config(
+    *,
+    hybrid_enabled: bool = False,
+    chunk_strategy: ChunkStrategyEnum = ChunkStrategyEnum.NAIVE,
+) -> SimpleNamespace:
     """App config stub with hybrid retrieval disabled by default."""
     return SimpleNamespace(
         embeddings_config=SimpleNamespace(),
-        indexer_config=SimpleNamespace(chunk_size=2000, overlap=0),
+        indexer_config=SimpleNamespace(
+            chunk_size=2000, overlap=0, chunk_strategy=chunk_strategy
+        ),
         retriever_config=SimpleNamespace(
             overfetch_factor=5,
             hybrid_enabled=hybrid_enabled,
@@ -98,13 +105,17 @@ def _hit(doc_path: str, score: float, chunk_index: int = 0) -> SearchHit:
     )
 
 
-def _retriever(store: FakeStore, factor: int) -> LocalRetriever:
+def _retriever(
+    store: FakeStore,
+    factor: int,
+    chunk_strategy: ChunkStrategyEnum = ChunkStrategyEnum.NAIVE,
+) -> LocalRetriever:
     """Build a LocalRetriever with injected fakes."""
     return LocalRetriever(
         embedder=StubEmbedder(),
         store=store,
         overfetch_factor=factor,
-        config=cast(AppConfig, _test_config()),
+        config=cast(AppConfig, _test_config(chunk_strategy=chunk_strategy)),
     )
 
 
@@ -248,8 +259,21 @@ class TestLocalRetriever:
         assert result.metadata["chunks_fetched"] == 2
         assert result.metadata["docs_returned"] == 1
         assert result.metadata["k"] == 5
-        assert "chunk_size" in result.metadata
-        assert "overlap" in result.metadata
+        assert result.metadata["chunk_size"] == 2000
+        assert result.metadata["overlap"] == 0
+        assert result.metadata["chunk_strategy"] == ChunkStrategyEnum.NAIVE.value
+
+    def test_metadata_reports_structural_strategy(self) -> None:
+        """Structural config surfaces in metadata for run attribution."""
+        # Given
+        store = FakeStore([_hit("docs/a.md", 0.9, 0)])
+        retriever = _retriever(
+            store, factor=5, chunk_strategy=ChunkStrategyEnum.STRUCTURAL
+        )
+        # When
+        result = retriever.retrieve("query", k=5)
+        # Then
+        assert result.metadata["chunk_strategy"] == ChunkStrategyEnum.STRUCTURAL.value
 
     def test_empty_store_returns_no_documents(self) -> None:
         """An empty index yields an empty, well-formed result."""

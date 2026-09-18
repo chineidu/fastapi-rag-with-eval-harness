@@ -1,6 +1,6 @@
 ---
 generated: 2026-09-17
-covers: 0001-0030
+covers: 0001-0031
 ---
 
 # Architecture overview
@@ -10,9 +10,10 @@ pinned FastAPI documentation corpus. A portable harness measures
 document-level retrieval quality, and one project-specific adapter
 connects it to the retriever in this repo, now running hybrid
 lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
-over the original dense baseline, with grounded generation over
-retrieved chunks served through non-streaming and SSE streaming
-endpoints, plus a bundled chat page for browser use.
+over chunked documents, with a structural chunking strategy available
+behind a config flag, plus grounded generation over retrieved chunks
+served through non-streaming and SSE streaming endpoints, plus a
+bundled chat page for browser use.
 
 ## Evaluation methodology
 
@@ -99,13 +100,21 @@ all identified by file paths.
 
 ## Retriever pipeline
 
-The RAG side under test: naive chunking, a pluggable vector store,
-document-level over-fetch on retrieval, and fingerprint-gated index
-rebuilds, plus hybrid lexical search fused with dense.
+The RAG side under test: two chunking strategies behind a config flag,
+a pluggable vector store, document-level over-fetch on retrieval, and
+fingerprint-gated index rebuilds, plus hybrid lexical search fused with
+dense.
 
 - `0018` Naive fixed-size chunker (ratified): 2000-character chunks
-  with sliding-window overlap; deterministic and dependency-free, but
-  structure-aware splitting is deferred.
+  with sliding-window overlap; deterministic and dependency-free, still
+  the default, with the structural alternative in 0031.
+- `0031` Structural chunker behind a strategy flag (proposed):
+  markdown packs whole ATX-all-levels plus Setext sections skipping
+  fenced code, Python packs top-level def/class blocks via `ast`,
+  oversized units fall back to naive slicing; selected by
+  `indexer_config.chunk_strategy`, naive stays default for A/B diffs;
+  first measurement roughly neutral (recall@10 OVERALL 0.575 vs 0.594
+  naive-hybrid baseline, see `notes.md`).
 - `0020` Qdrant as vector store (ratified): self-hosted Qdrant behind a
   `VectorStore` protocol and factory, selected by config so backends
   stay swappable.

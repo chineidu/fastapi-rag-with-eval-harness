@@ -50,6 +50,13 @@ class VectorStoreBackendEnum(StrEnum):
     QDRANT = "qdrant"
 
 
+class ChunkStrategyEnum(StrEnum):
+    """Chunking strategies for the document indexer."""
+
+    NAIVE = "naive"
+    STRUCTURAL = "structural"
+
+
 class VerdictEnum(StrEnum):
     """Binary relevance verdicts for the LLM judge."""
 

@@ -81,6 +81,7 @@ class LocalRetriever:
         self._overfetch_factor = resolved_factor
         self._chunk_size = cfg.indexer_config.chunk_size
         self._overlap = cfg.indexer_config.overlap
+        self._chunk_strategy = cfg.indexer_config.chunk_strategy
         self._hybrid_enabled = cfg.retriever_config.hybrid_enabled
         self._sparse_k = cfg.retriever_config.sparse_k
         self._rrf_k = cfg.retriever_config.rrf_k
@@ -197,6 +198,9 @@ class LocalRetriever:
             "k": k,
             "chunk_size": self._chunk_size,
             "overlap": self._overlap,
+            "chunk_strategy": getattr(
+                self._chunk_strategy, "value", self._chunk_strategy
+            ),
             "hybrid_enabled": self._hybrid_enabled,
             "sparse_k": self._sparse_k,
             "rrf_k": self._rrf_k,

@@ -114,3 +114,30 @@ Rare rebuilds, 2 API replicas, managed Qdrant in prod, Tantivy via S3.
 7. Traffic shifts once both pass readiness; old replicas drain.
 8. Cleanup later deletes `docs_v122` + old tarball, keeps last 1-2 for rollback.
    Rollback is redeploy with `INDEX_VERSION=v122`.
+
+## Structural chunker v1 (2026-09-17)
+
+ADR-0031 (proposed). `indexer_config.chunk_strategy: naive | structural`,
+default naive. Structural packs whole ATX-all-levels + Setext markdown
+sections (fenced code skipped) and top-level def/class Python blocks via
+`ast`; oversized units fall back to naive char-slicing. No new deps.
+
+Index: 1416 structural chunks vs 1200 naive (same corpus, same 2000/0 size).
+Eval `rag-eval diff v2-hybrid-ratio-075-025 structural-v1` (recall@10):
+
+- OVERALL 0.594 -> 0.575 (-0.020, -3.3%, noise)
+- DIRECT_LOOKUP 0.665 -> 0.624 (-0.041, -6.1%, flagged regressed)
+- MULTI_HOP 0.583 -> 0.566 (-0.017, -2.9%, noise)
+- CONCEPTUAL 0.457 -> 0.480 (+0.022, +4.9%, noise)
+
+Notes:
+
+- Roughly neutral overall: boundary-respecting chunks did not move the
+  needle at doc-level recall@k. Smaller average chunk size (more chunks
+  for the same corpus) spreads each doc's signal thinner, which plausibly
+  costs exact-phrase DIRECT_LOOKUP hits while slightly helping synthesis
+  CONCEPTUAL queries. Per-query extremes: D_kwDOCZduT84Airbw 1.0 -> 0.0,
+  D_kwDOCZduT84AWbw2 0.667 -> 1.0.
+- `constructed-mh-03` still 0.0; unchanged lever remains reranking.
+- Dev index currently holds the structural build; committed config default
+  is still naive, so the next plain `rag-index build --force` restores it.
