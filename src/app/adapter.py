@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.app.generator import RAGGenerator
 from src.app.hybrid import TantivyIndex, rrf_fuse
+from src.app.reranker import Reranker
 from src.app.vector_store import VectorStore, get_vector_store
 from src.config import load_app_config
 from src.embeddings import AbstractEmbedder, get_embedder
@@ -38,6 +39,7 @@ class LocalRetriever:
         overfetch_factor: int | None = None,
         lexical: TantivyIndex | None = None,
         generator: RAGGenerator | None = None,
+        reranker: Reranker | None = None,
     ) -> None:
         """Configure the retriever.
 
@@ -60,6 +62,10 @@ class LocalRetriever:
             Injectable generator (tests). Built lazily from ``config`` on
             first ``agenerate`` call when ``None``, so retrieval-only use
             never constructs an LLM client.
+        reranker : Reranker | None
+            Injectable reranker (tests). Built from
+            ``config.retriever_config.rerank_model_id`` when ``None`` and
+            reranking is enabled.
 
         Raises
         ------
@@ -87,6 +93,15 @@ class LocalRetriever:
         self._rrf_k = cfg.retriever_config.rrf_k
         self._dense_weight = cfg.retriever_config.dense_weight
         self._sparse_weight = cfg.retriever_config.sparse_weight
+        self._rerank_enabled = cfg.retriever_config.rerank_enabled
+        self._rerank_model_id = cfg.retriever_config.rerank_model_id
+        self._rerank_top_n = cfg.retriever_config.rerank_top_n
+        if reranker is not None:
+            self._reranker = reranker
+        elif self._rerank_enabled:
+            self._reranker = Reranker(model_id=self._rerank_model_id)
+        else:
+            self._reranker = None
         if lexical is not None:
             self._lexical = lexical
         elif self._hybrid_enabled:
@@ -150,6 +165,12 @@ class LocalRetriever:
                     "Hybrid enabled but no lexical index; using dense hits only"
                 )
             fused_hits = dense_hits
+        # Rerank fused chunks before dedupe so buried candidates surface.
+        if self._rerank_enabled and self._reranker is not None and fused_hits:
+            candidates = fused_hits[: self._rerank_top_n]
+            fused_hits = self._reranker.rerank(query, candidates, self._rerank_top_n)
+        elif self._rerank_enabled:
+            logger.warning("Rerank enabled but no reranker; using fused hits only")
         return fused_hits, sparse_fetched_count
 
     def retrieve(self, query: str, k: int = 10) -> RetrievalResult:
@@ -207,6 +228,9 @@ class LocalRetriever:
             "dense_weight": self._dense_weight,
             "sparse_weight": self._sparse_weight,
             "sparse_fetched_count": sparse_fetched_count,
+            "rerank_enabled": self._rerank_enabled,
+            "rerank_model_id": self._rerank_model_id,
+            "rerank_top_n": self._rerank_top_n,
         }
         logger.debug(
             "Retrieved %d docs from %d chunks for k=%d",

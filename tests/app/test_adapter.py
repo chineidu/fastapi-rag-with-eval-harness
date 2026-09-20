@@ -16,13 +16,15 @@ from src.schemas.containers import QdrantConfig
 from src.schemas.generation import GeneratedAnswer
 from src.schemas.models import AppConfig
 from src.schemas.retrieval import Chunk, CollectionInfo, SearchHit
-from src.schemas.types import ChunkStrategyEnum
+from src.schemas.types import DEFAULT_RERANK_MODEL_ID, ChunkStrategyEnum
 
 
 def _test_config(
     *,
     hybrid_enabled: bool = False,
     chunk_strategy: ChunkStrategyEnum = ChunkStrategyEnum.NAIVE,
+    rerank_enabled: bool = False,
+    rerank_top_n: int = 30,
 ) -> SimpleNamespace:
     """App config stub with hybrid retrieval disabled by default."""
     return SimpleNamespace(
@@ -38,6 +40,9 @@ def _test_config(
             dense_weight=1.0,
             sparse_weight=1.0,
             tantivy_index_dir="",
+            rerank_enabled=rerank_enabled,
+            rerank_model_id=DEFAULT_RERANK_MODEL_ID,
+            rerank_top_n=rerank_top_n,
         ),
     )
 
@@ -462,6 +467,158 @@ class TestLocalRetriever:
         assert retriever._generator is fake
         assert fake.last_contexts == contexts
         assert isinstance(result, GeneratedAnswer)
+
+
+class FakeReranker:
+    """Reranker stub reversing order and recording call arguments."""
+
+    def __init__(self) -> None:
+        """Initialize with no recorded calls."""
+        self.calls: list[tuple[str, list[SearchHit], int]] = []
+
+    def rerank(self, query: str, hits: list[SearchHit], top_n: int) -> list[SearchHit]:
+        """Record inputs and return hits in reverse order with fresh scores."""
+        self.calls.append((query, list(hits), top_n))
+        ranked = list(reversed(hits))
+        return [
+            SearchHit(
+                chunk_id=hit.chunk_id,
+                doc_path=hit.doc_path,
+                chunk_index=hit.chunk_index,
+                text=hit.text,
+                score=0.99 - index * 0.01,
+            )
+            for index, hit in enumerate(ranked[:top_n])
+        ]
+
+
+class TestRerankIntegration:
+    def test_rerank_reorders_fused_hits(self) -> None:
+        """Given rerank enabled, then documents follow reranked order."""
+        # Given
+        from src.app.reranker import Reranker
+
+        store = FakeStore([_hit("docs/a.md", 0.9, 0), _hit("docs/b.md", 0.8, 0)])
+        reranker = FakeReranker()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(rerank_enabled=True)),
+            reranker=cast(Reranker, reranker),
+        )
+        # When
+        result = retriever.retrieve("query", k=10)
+        # Then
+        assert [doc.doc_path for doc in result.documents] == [
+            "docs/b.md",
+            "docs/a.md",
+        ]
+        assert len(reranker.calls) == 1
+        assert reranker.calls[0][0] == "query"
+        assert result.metadata["rerank_enabled"] is True
+        assert result.metadata["rerank_model_id"] == DEFAULT_RERANK_MODEL_ID
+        assert result.metadata["rerank_top_n"] == 30
+
+    def test_rerank_disabled_skips_reranker(self) -> None:
+        """Given rerank disabled, then the injected reranker never runs."""
+        # Given
+        from src.app.reranker import Reranker
+
+        store = FakeStore([_hit("docs/a.md", 0.9, 0), _hit("docs/b.md", 0.8, 0)])
+        reranker = FakeReranker()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(rerank_enabled=False)),
+            reranker=cast(Reranker, reranker),
+        )
+        # When
+        result = retriever.retrieve("query", k=10)
+        # Then
+        assert [doc.doc_path for doc in result.documents] == [
+            "docs/a.md",
+            "docs/b.md",
+        ]
+        assert reranker.calls == []
+        assert result.metadata["rerank_enabled"] is False
+
+    def test_rerank_enabled_without_reranker_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Rerank enabled without a reranker warns and keeps fused order."""
+        # Given
+        from src.app.reranker import Reranker
+
+        store = FakeStore([_hit("docs/a.md", 0.9, 0)])
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(rerank_enabled=True)),
+            reranker=cast(Reranker, FakeReranker()),
+        )
+        retriever._reranker = None
+        # When
+        with caplog.at_level("WARNING", logger="src.app.adapter"):
+            result = retriever.retrieve("query", k=10)
+        # Then
+        assert [doc.doc_path for doc in result.documents] == ["docs/a.md"]
+        assert any("no reranker" in record.message for record in caplog.records)
+
+    def test_rerank_slices_to_top_n(self) -> None:
+        """Given more fused hits than top_n, then only top_n enter rerank."""
+        # Given
+        from src.app.reranker import Reranker
+
+        store = FakeStore(
+            [
+                _hit("docs/a.md", 0.9, 0),
+                _hit("docs/b.md", 0.8, 0),
+                _hit("docs/c.md", 0.7, 0),
+                _hit("docs/d.md", 0.6, 0),
+                _hit("docs/e.md", 0.5, 0),
+            ]
+        )
+        reranker = FakeReranker()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=store,
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(rerank_enabled=True, rerank_top_n=2)),
+            reranker=cast(Reranker, reranker),
+        )
+        # When
+        result = retriever.retrieve("query", k=10)
+        # Then
+        assert len(reranker.calls[0][1]) == 2
+        assert reranker.calls[0][2] == 2
+        assert [doc.doc_path for doc in result.documents] == [
+            "docs/b.md",
+            "docs/a.md",
+        ]
+        assert result.metadata["chunks_fetched"] == 2
+        assert result.metadata["rerank_top_n"] == 2
+
+    def test_rerank_skipped_on_empty_hits(self) -> None:
+        """Given no fused hits, then rerank never runs even when enabled."""
+        # Given
+        from src.app.reranker import Reranker
+
+        reranker = FakeReranker()
+        retriever = LocalRetriever(
+            embedder=StubEmbedder(),
+            store=FakeStore([]),
+            overfetch_factor=5,
+            config=cast(AppConfig, _test_config(rerank_enabled=True)),
+            reranker=cast(Reranker, reranker),
+        )
+        # When
+        result = retriever.retrieve("query", k=10)
+        # Then
+        assert result.documents == []
+        assert reranker.calls == []
 
 
 class TestLocalRetrieverWithQdrant:

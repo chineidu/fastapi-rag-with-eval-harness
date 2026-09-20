@@ -141,3 +141,12 @@ Notes:
 - `constructed-mh-03` still 0.0; unchanged lever remains reranking.
 - Dev index currently holds the structural build; committed config default
   is still naive, so the next plain `rag-index build --force` restores it.
+
+## Cross-encoder reranking v1 (2026-09-20)
+
+ADR-0032 (ratified). `retriever_config.rerank_enabled: false` by default,
+`rerank_model_id: Xenova/ms-marco-MiniLM-L-6-v2`, `rerank_top_n: 30`.
+Reranks the top-30 fused chunk hits with a FastEmbed cross-encoder before
+per-doc dedupe (ADR-0021). The `constructed-mh-03` lever is now built but
+gated off, so dense-only and hybrid baselines reproduce; eval deferred to
+a follow-up `rag-eval diff` run with reranking enabled.

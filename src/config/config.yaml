@@ -93,3 +93,6 @@ config:
     dense_weight: 0.75
     sparse_weight: 0.25
     tantivy_index_dir: "data/.rag-index/tantivy"
+    rerank_enabled: false
+    rerank_model_id: "Xenova/ms-marco-MiniLM-L-6-v2"
+    rerank_top_n: 30

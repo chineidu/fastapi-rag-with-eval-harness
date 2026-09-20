@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: ratified
 date: 2026-09-17
 deciders: project owner
 ---

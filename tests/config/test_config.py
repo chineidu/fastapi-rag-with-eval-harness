@@ -15,6 +15,7 @@ from src.schemas.containers import (
     Middleware,
     RAGConfig,
     RAGLLMConfig,
+    RetrieverConfig,
     StackExchangeEvalConfig,
 )
 from src.schemas.models import AppConfig
@@ -139,6 +140,24 @@ class TestRAGConfig:
         llm = RAGLLMConfig(model_id="test-model")
         cfg = RAGConfig(llm=llm)
         assert cfg.llm.model_id == "test-model"
+
+
+class TestRetrieverConfig:
+    def test_defaults(self) -> None:
+        """Rerank defaults keep baselines reproducible."""
+        # Given / When
+        cfg = RetrieverConfig()
+        # Then
+        assert cfg.rerank_enabled is False
+        assert cfg.rerank_top_n == 30
+
+    def test_rejects_non_positive_rerank_top_n(self) -> None:
+        """A non-positive rerank window is a configuration error."""
+        # Given / When / Then
+        with pytest.raises(ValueError, match="rerank_top_n must be positive"):
+            RetrieverConfig(rerank_top_n=0)
+        with pytest.raises(ValueError, match="rerank_top_n must be positive"):
+            RetrieverConfig(rerank_top_n=-1)
 
 
 class TestEvalDefaultsConfig:

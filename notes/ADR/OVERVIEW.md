@@ -1,6 +1,6 @@
 ---
 generated: 2026-09-17
-covers: 0001-0031
+covers: 0001-0032
 ---
 
 # Architecture overview
@@ -11,7 +11,8 @@ document-level retrieval quality, and one project-specific adapter
 connects it to the retriever in this repo, now running hybrid
 lexical-plus-dense search (tantivy BM25 fused with dense via RRF)
 over chunked documents, with a structural chunking strategy available
-behind a config flag, plus grounded generation over retrieved chunks
+behind a config flag and optional cross-encoder reranking before
+dedupe, plus grounded generation over retrieved chunks
 served through non-streaming and SSE streaming endpoints, plus a
 bundled chat page for browser use.
 
@@ -108,7 +109,7 @@ dense.
 - `0018` Naive fixed-size chunker (ratified): 2000-character chunks
   with sliding-window overlap; deterministic and dependency-free, still
   the default, with the structural alternative in 0031.
-- `0031` Structural chunker behind a strategy flag (proposed):
+- `0031` Structural chunker behind a strategy flag (ratified):
   markdown packs whole ATX-all-levels plus Setext sections skipping
   fenced code, Python packs top-level def/class blocks via `ast`,
   oversized units fall back to naive slicing; selected by
@@ -139,6 +140,17 @@ fused before dedupe to recover exact-token matches the baseline misses.
   normalized in `rrf_fuse`); hybrid is the active retriever
   (`hybrid_enabled: true`) with the dense-only path kept as the diff
   baseline; distribution across replicas deferred to a future ADR.
+
+## Reranking
+
+Token-level relevance inside the fused candidate window, applied
+before per-document dedupe where rank-only fusion saturates.
+
+- `0032` Cross-encoder reranking over fused chunks (ratified): FastEmbed
+  `TextCrossEncoder` (`Xenova/ms-marco-MiniLM-L-6-v2`) reranks the top-30
+  fused chunk hits before dedupe; gated by
+  `retriever_config.rerank_enabled` (default false) so dense-only and
+  hybrid baselines reproduce; eval deferred to a follow-up run.
 
 ## Generation
 

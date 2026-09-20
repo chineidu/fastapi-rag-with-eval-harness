@@ -87,6 +87,10 @@ class DiffFlagEnum(StrEnum):
     REGRESSED = "regressed"
 
 
+# ======= Constants =======
+DEFAULT_RERANK_MODEL_ID: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+
+
 # ======= NamedTuples =======
 class RepoHandle(NamedTuple):
     """A pair of immutable strings representing the owner and name of a GitHub repository."""

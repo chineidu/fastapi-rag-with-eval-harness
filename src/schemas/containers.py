@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass, field
 
-from src.schemas.types import ChunkStrategyEnum, VectorStoreBackendEnum
+from src.schemas.types import (
+    DEFAULT_RERANK_MODEL_ID,
+    ChunkStrategyEnum,
+    VectorStoreBackendEnum,
+)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -309,6 +313,23 @@ class RetrieverConfig:
         default="data/.rag-index/tantivy",
         metadata={"description": "Persisted tantivy index directory."},
     )
+    rerank_enabled: bool = field(
+        default=False,
+        metadata={"description": "Rerank fused chunk hits before dedupe."},
+    )
+    rerank_model_id: str = field(
+        default=DEFAULT_RERANK_MODEL_ID,
+        metadata={"description": "FastEmbed cross-encoder model id."},
+    )
+    rerank_top_n: int = field(
+        default=30,
+        metadata={"description": "Fused chunk candidates entering reranker."},
+    )
+
+    def __post_init__(self) -> None:
+        """Reject non-positive rerank windows at the boundary."""
+        if self.rerank_top_n <= 0:
+            raise ValueError(f"rerank_top_n must be positive, got {self.rerank_top_n}.")
 
 
 @dataclass(slots=True, kw_only=True)

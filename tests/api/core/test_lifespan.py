@@ -11,7 +11,7 @@ from src.app.vector_store import VectorStore
 from src.embeddings.stub import StubEmbedder
 from src.schemas.models import AppConfig
 from src.schemas.retrieval import CollectionInfo
-from src.schemas.types import ChunkStrategyEnum
+from src.schemas.types import DEFAULT_RERANK_MODEL_ID, ChunkStrategyEnum
 
 
 class _DescribeStore:
@@ -54,6 +54,9 @@ def _config() -> AppConfig:
                 dense_weight=1.0,
                 sparse_weight=1.0,
                 tantivy_index_dir="",
+                rerank_enabled=False,
+                rerank_model_id=DEFAULT_RERANK_MODEL_ID,
+                rerank_top_n=30,
             ),
         ),
     )
